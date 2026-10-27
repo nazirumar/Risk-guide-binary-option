@@ -70,6 +70,8 @@ export type WebhookEvent = {
   invoiceUrl?: string;
   /** The provider's payment/transaction ID. */
   paymentId?: string;
+  /** User id from metadata (Paystack). */
+  userId?: string;
 };
 
 // ─── Interface ───────────────────────────────────────────────────────────────
@@ -216,17 +218,18 @@ export class PaystackProvider implements BillingProvider {
 
   parseWebhookEvent(rawBody: string): WebhookEvent | null {
     try {
-      const body = JSON.parse(rawBody) as {
-        event?: string;
-        data?: {
-          id?: number;
-          reference?: string;
-          customer?: { customer_code?: string };
-          amount?: number;
-          currency?: string;
-          status?: string;
-        };
-      };
+  const body = JSON.parse(rawBody) as {
+    event?: string;
+    data?: {
+      id?: number;
+      reference?: string;
+      customer?: { customer_code?: string };
+      amount?: number;
+      currency?: string;
+      status?: string;
+      metadata?: { userId?: string };
+    };
+  };
       const eventType = body.event ?? "unknown";
       const data = body.data ?? {};
       // Map Paystack event types to our normalized shape.
@@ -235,16 +238,17 @@ export class PaystackProvider implements BillingProvider {
         failed: "PAST_DUE",
         abandoned: "EXPIRED",
       };
-      return {
-        eventId: String(data.id ?? data.reference ?? ""),
-        eventType,
-        customerId: data.customer?.customer_code,
-        paymentId: data.reference,
-        amount: data.amount,
-        currency: data.currency,
-        status: statusMap[data.status ?? ""] ?? undefined,
-        plan: "PRO", // Paystack doesn't carry the plan in the event — we infer from the subscription lookup
-      };
+  return {
+    eventId: String(data.id ?? data.reference ?? ""),
+    eventType,
+    customerId: data.customer?.customer_code,
+    paymentId: data.reference,
+    amount: data.amount,
+    currency: data.currency,
+    status: statusMap[data.status ?? ""] ?? undefined,
+    plan: "PRO",
+    userId: data.metadata?.userId,
+  };
     } catch {
       return null;
     }
