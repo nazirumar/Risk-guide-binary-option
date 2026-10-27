@@ -41,7 +41,7 @@ export async function createCheckoutAction(): Promise<BillingResult & { checkout
       : PLAN_CONFIGS.PRO.monthlyPriceUSD * 100; // cents
 
   try {
-    const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/app/billing`;
+    const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/app/billing`;
     const result = await provider.initializeCheckout({
       userId,
       userEmail: email,
