@@ -1,0 +1,1071 @@
+     1→// RiskGuard Prisma schema — Phase 1: Database Schema
+     2→//
+     3→// All money fields use Prisma's `Decimal` type — never Float (rule #1).
+     4→// Percentages are also Decimal (e.g. payoutPercent 0.85 = 85% broker payout).
+     5→//
+     6→// Sandbox/dev uses SQLite. The `Decimal` Prisma type preserves arbitrary
+     7→// precision on both SQLite (stored as TEXT) and Postgres (stored as NUMERIC).
+     8→// Phase 14's production migration will tighten the precision via a raw SQL
+     9→// migration step: money → NUMERIC(18, 2), percentages → NUMERIC(7, 4).
+    10→//
+    11→// To switch to Postgres: change provider to "postgresql" and point DATABASE_URL
+    12→// at your Postgres connection string (see docker-compose.yml).
+    13→
+    14→generator client {
+    15→  provider = "prisma-client-js"
+    16→}
+    17→
+    18→datasource db {
+    19→  provider = "sqlite"
+    20→  url      = env("DATABASE_URL")
+    21→}
+    22→
+    23→// ──────────────────────────────────────────────────────────────────────────────
+    24→// Enums — declared as Prisma enums (Postgres-native) but the SQLite provider
+    25→// falls back to String columns automatically. The semantic contract is the same.
+    26→// ──────────────────────────────────────────────────────────────────────────────
+    27→
+    28→enum AccountType {
+    29→  DEMO
+    30→  REAL
+    31→}
+    32→
+    33→enum TransactionType {
+    34→  DEPOSIT
+    35→  WITHDRAWAL
+    36→  BONUS
+    37→  ADJUSTMENT
+    38→}
+    39→
+    40→enum TradeDirection {
+    41→  CALL
+    42→  PUT
+    43→}
+    44→
+    45→enum TradeResult {
+    46→  WIN
+    47→  LOSS
+    48→  TIE
+    49→  OPEN
+    50→}
+    51→
+    52→enum TradeEmotion {
+    53→  CALM
+    54→  CONFIDENT
+    55→  FEARFUL
+    56→  GREEDY
+    57→  REVENGE
+    58→  TIRED
+    59→  BORED
+    60→}
+    61→
+    62→enum StakingMethod {
+    63→  FIXED_AMOUNT
+    64→  FIXED_PERCENT
+    65→  COMPOUNDING
+    66→  ANTI_MARTINGALE
+    67→  FIBONACCI
+    68→  MARTINGALE
+    69→  KELLY_FRACTION
+    70→  CUSTOM
+    71→}
+    72→
+    73→enum GoalType {
+    74→  DAILY
+    75→  WEEKLY
+    76→  MONTHLY
+    77→  BALANCE_TARGET
+    78→}
+    79→
+    80→enum GoalStatus {
+    81→  ACTIVE
+    82→  ACHIEVED
+    83→  MISSED
+    84→  CANCELLED
+    85→}
+    86→
+    87→enum LockoutReason {
+    88→  DAILY_LOSS
+    89→  CONSEC_LOSSES
+    90→  MAX_TRADES
+    91→  WEEKLY_LOSS
+    92→  MANUAL
+    93→}
+    94→
+    95→enum TradingSessionMood {
+    96→  FOCUSED
+    97→  CALM
+    98→  TIRED
+    99→  FRUSTRATED
+   100→  CONFIDENT
+   101→  REVENGEFUL
+   102→}
+   103→
+   104→// Phase 17 — whether the pre-trade confirmation screen asks for a
+   105→// "reason for entry" text, and whether it is mandatory.
+   106→enum PreTradeReasonMode {
+   107→  OFF
+   108→  OPTIONAL
+   109→  REQUIRED
+   110→}
+   111→
+   112→// Phase 18 — the outcome of a BalanceCheck row.
+   113→//   MATCHED   = app balance and broker balance agreed (within tolerance)
+   114→//   ADJUSTED  = mismatch resolved by creating an ADJUSTMENT transaction
+   115→//   IGNORED   = mismatch noted but dismissed with a free-text note
+   116→enum BalanceCheckResolution {
+   117→  MATCHED
+   118→  ADJUSTED
+   119→  IGNORED
+   120→}
+   121→
+   122→// Phase 18 — how often the "time to verify your broker balance" reminder
+   123→// surfaces. OFF disables the prompt entirely; the user can still trigger a
+   124→// check manually from the Accounts / Balance Sync pages.
+   125→enum BalanceSyncReminderFrequency {
+   126→  DAILY
+   127→  WEEKLY
+   128→  OFF
+   129→}
+   130→
+   131→// Phase 19 — the strategy a WithdrawalRule uses to compute the recommended
+   132→// withdrawal amount. PERCENT_OF_PROFIT takes `value`% of profit-since-baseline;
+   133→// FIXED_AMOUNT recommends a flat `value`; BALANCE_ABOVE_THRESHOLD recommends
+   134→// everything above `value` (a balance target, not a profit percent).
+   135→enum WithdrawalRuleType {
+   136→  PERCENT_OF_PROFIT
+   137→  FIXED_AMOUNT
+   138→  BALANCE_ABOVE_THRESHOLD
+   139→}
+   140→
+   141→// Phase 19 — how often a withdrawal rule is "due". The cron checker compares
+   142→// the rule's lastTriggeredAt to now to decide whether to fire a reminder.
+   143→enum WithdrawalFrequency {
+   144→  DAILY
+   145→  WEEKLY
+   146→  MONTHLY
+   147→}
+   148→
+   149→// Phase 19 — the reference point for "profit since baseline". The baseline
+   150→// determines what counts as withdrawable profit:
+   151→//   STARTING_BALANCE   — profit = currentBalance − startingBalance
+   152→//   LAST_WITHDRAWAL    — profit = currentBalance − (balance right after the last withdrawal)
+   153→//   HIGH_WATER_MARK    — profit = currentBalance − highWaterMark (peak balance)
+   154→enum WithdrawalBaseline {
+   155→  STARTING_BALANCE
+   156→  LAST_WITHDRAWAL
+   157→  HIGH_WATER_MARK
+   158→}
+   159→
+   160→// ──────────────────────────────────────────────────────────────────────────────
+   161→// User — root entity for multi-tenant isolation (rule #3: every query is
+   162→// scoped by userId).
+   163→// ──────────────────────────────────────────────────────────────────────────────
+   164→
+   165→model User {
+   166→  id            String   @id @default(cuid())
+   167→  name          String?
+   168→  email         String   @unique
+   169→  emailVerified DateTime?
+   170→  passwordHash  String?
+   171→  image         String?
+   172→  timezone      String   @default("UTC")
+   173→  baseCurrency  String   @default("USD")
+   174→  isOnboarded   Boolean  @default(false)
+   175→  /// Phase 10: per-user pre-trade checklist items (JSON array of strings).
+   176→  checklistItems Json?
+   177→  /// Phase 10: daily journal entries (JSON map of "YYYY-MM-DD" → reflection text).
+   178→  dailyJournal  Json?
+   179→  /// Phase 12: notification preferences (JSON map of type → {inApp, email}).
+   180→  notificationPrefs Json?
+   181→  /// Phase 12: trading hours (JSON: { start: "09:00", end: "17:00", days: [1,2,3,4,5] }).
+   182→  tradingHours Json?
+   183→  /// Phase 16: tilt score (0-100 composite).
+   184→  tiltScore    Decimal?
+   185→  /// Phase 16: when tilt was last detected.
+   186→  lastTiltAt  DateTime?
+   187→  /// Phase 17: skip the pre-trade confirmation screen on DEMO accounts
+   188→  /// (REAL accounts always confirm — discipline-first).
+   189→  preTradeConfirmSkipDemo   Boolean @default(false)
+   190→  /// Phase 17: seconds the "Confirm trade" button stays disabled (0-15, default 5).
+   191→  preTradeCooldownSeconds   Int     @default(5)
+   192→  /// Phase 17: require the "This trade follows my plan" checkbox in the modal.
+   193→  preTradeRequirePlanCheckbox Boolean @default(false)
+   194→  /// Phase 17: whether the modal asks for a quick "reason for entry".
+   195→  preTradeReasonMode        PreTradeReasonMode @default(OPTIONAL)
+   196→  /// Phase 18: tolerance (in percent, 0.5 = 0.5%) below which a balance check
+   197→  /// is automatically marked MATCHED instead of triggering an adjustment flow.
+   198→  balanceSyncTolerancePercent Decimal @default(0.5)
+   199→  /// Phase 18: how often to surface the "time to verify your broker balance"
+   200→  /// reminder banner on the dashboard. OFF disables the prompt.
+   201→  balanceSyncReminderFrequency BalanceSyncReminderFrequency @default(DAILY)
+   202→  /// Phase 18: last time the prompt was shown. Used by shouldPromptBalanceCheck
+   203→  /// to suppress it for the rest of the day (DAILY) or the rest of the week
+   204→  /// (WEEKLY) — purely a display-cookie, not authoritative for any accounting.
+   205→  balanceSyncLastPromptedAt DateTime?
+   206→  /// Phase 19: optional — when todayPL/balance >= this percent, prompt the
+   207→  /// trader to stop trading and bank some profit. null = disabled.
+   208→  bigWinDayPercent Decimal?
+   209→  /// Phase 19: last time the big-win-day banner was shown. Used to suppress
+   210→  /// re-prompting within the same trading day.
+   211→  bigWinDayLastPromptedAt DateTime?
+   212→  /// Phase 21: today's discipline score (0-100), cached for fast dashboard
+   213→  /// reads. Null until the first computation. Recomputed by
+   214→  /// `computeDailyScoreAction` on demand and by the daily cron at
+   215→  /// /api/cron/discipline-scores (recomputes yesterday for every user).
+   216→  disciplineScore          Decimal?
+   217→  /// Phase 21: when the cached disciplineScore was last recomputed.
+   218→  disciplineScoreUpdatedAt DateTime?
+   219→  /// Phase 22: when true, the Add Trade form warns about upcoming high-impact
+   220→  /// news events for the traded pair's currencies within the configured
+   221→  /// window (default 15 minutes). Disable to suppress the warning entirely.
+   222→  newsWarningEnabled       Boolean @default(true)
+   223→  /// Phase 22: how many minutes before/after a high-impact news event the
+   224→  /// Add Trade warning fires. Default 15. Configurable per-user.
+   225→  newsWarningMinutes       Int     @default(15)
+   226→  /// Phase 23: master switch for Telegram alerts. When false, no alerts are
+   227→  /// sent regardless of per-alert toggles. The TelegramLink row can still
+   228→  /// exist (the link isn't broken by disabling).
+   229→  telegramAlertsEnabled    Boolean @default(true)
+   230→  /// Phase 23: set by the /stop Telegram command — pauses alerts without
+   231→  /// unlinking. The /start command (without a code) resumes.
+   232→  telegramAlertsPaused     Boolean @default(false)
+   233→  /// Phase 23: "HH:MM" in the user's TZ for the daily summary alert.
+   234→  /// null = no daily summary.
+   235→  telegramDailySummaryTime String?
+   236→  /// Phase 23: one-time link code for /start CODE. Null when no pending link.
+   237→  telegramLinkCode         String?
+   238→  /// Phase 23: when the link code expires (15 min after generation).
+   239→  telegramLinkCodeExpiresAt DateTime?
+   240→  /// Phase 23: AI weekly review opt-in. OFF by default per spec — the user
+   241→  /// must explicitly enable it after reading the clear explanation of what
+   242→  /// data is sent (aggregated stats only, no email/name/screenshots).
+   243→  aiReviewEnabled          Boolean @default(false)
+   244→  /// Phase 24: the user's subscription (one-to-one back-reference to the
+   245→  /// Subscription model which owns the userId FK). Resolved via
+   246→  /// `db.subscription.findUnique({ where: { userId } })` — no separate
+   247→  /// subscriptionId field needed (the @@unique([userId]) on Subscription
+   248→  /// enforces one-per-user).
+   249→  subscription              Subscription? @relation("UserSubscription")
+   250→  createdAt     DateTime @default(now())
+   251→  updatedAt     DateTime @updatedAt
+   252→
+   253→  // Auth.js Prisma adapter relations — Phase 2.
+   254→  accounts        Account[]
+   255→  authenticators  Authenticator[]
+   256→  authSessions    AuthSession[]
+   257→  verificationTokens VerificationToken[]
+   258→
+   259→  // RiskGuard domain relations
+   260→  tradingAccounts TradingAccount[]
+   261→  strategies      Strategy[]
+   262→  trades          Trade[]
+   263→  riskProfiles    RiskProfile[]
+   264→  stakingPlans    StakingPlan[]
+   265→  sessions        TradingSession[]
+   266→  goals           Goal[]
+   267→  lockouts        Lockout[]
+   268→  notifications   Notification[]
+   269→  auditLogs      AuditLog[]
+   270→  passwordResets PasswordReset[]
+   271→  tiltEvents     TiltEvent[]
+   272→  cancelledTradeAttempts CancelledTradeAttempt[]
+   273→  balanceChecks  BalanceCheck[]
+   274→  withdrawalRules WithdrawalRule[]
+   275→  dailyScores    DailyScore[]
+   276→  telegramLink   TelegramLink?
+   277→  weeklyReviews  WeeklyReview[]
+   278→  payments       Payment[]
+   279→}
+   280→
+   281→// Auth.js adapter models — see https://authjs.dev/adapters/prisma
+   282→model Account {
+   283→  id                String  @id @default(cuid())
+   284→  userId            String
+   285→  type              String
+   286→  provider          String
+   287→  providerAccountId String
+   288→  refresh_token     String?
+   289→  access_token      String?
+   290→  expires_at        Int?
+   291→  token_type        String?
+   292→  scope             String?
+   293→  id_token         String?
+   294→  session_state     String?
+   295→
+   296→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   297→
+   298→  @@unique([provider, providerAccountId])
+   299→  @@index([userId])
+   300→}
+   301→
+   302→model Authenticator {
+   303→  credentialID         String  @id
+   304→  userId               String
+   305→  providerAccountId    String
+   306→  credentialPublicKey  String
+   307→  counter              Int
+   308→  credentialDeviceType String
+   309→  credentialBackedUp   Boolean
+   310→  transports           String?
+   311→
+   312→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   313→
+   314→  @@unique([userId, providerAccountId])
+   315→  @@index([userId])
+   316→}
+   317→
+   318→// ──────────────────────────────────────────────────────────────────────────────
+   319→// Session — database-backed session (PROJECT_RULES.md Phase 0 decision: choose
+   320→// database sessions, NOT JWT). Database sessions:
+   321→//   1. Can be revoked server-side instantly (logout-everywhere, security incident)
+   322→//   2. Stolen cookie only contains an opaque ID — no user data leaked
+   323→//   3. Every request validates against DB, so revocations take effect immediately
+   324→//   4. Pairs cleanly with server actions (need user data anyway)
+   325→// Cost: per-request DB hit — fine with Prisma singleton + connection pooling.
+   326→// ──────────────────────────────────────────────────────────────────────────────
+   327→
+   328→model AuthSession {
+   329→  id           String   @id @default(cuid())
+   330→  sessionToken String   @unique
+   331→  userId       String
+   332→  expires      DateTime
+   333→  createdAt    DateTime @default(now())
+   334→  updatedAt    DateTime @updatedAt
+   335→
+   336→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   337→
+   338→  @@index([userId])
+   339→  @@index([expires])
+   340→}
+   341→
+   342→// ──────────────────────────────────────────────────────────────────────────────
+   343→// VerificationToken — used by Auth.js adapter for email verification + magic
+   344→// link flows (token + identifier = email + expires). Single-use.
+   345→// ──────────────────────────────────────────────────────────────────────────────
+   346→
+   347→model VerificationToken {
+   348→  identifier String
+   349→  token      String   @unique
+   350→  expires    DateTime
+   351→  createdAt  DateTime @default(now())
+   352→
+   353→  user User @relation(fields: [identifier], references: [email], onDelete: Cascade)
+   354→
+   355→  @@unique([identifier, token])
+   356→  @@index([identifier])
+   357→}
+   358→
+   359→// ──────────────────────────────────────────────────────────────────────────────
+   360→// PasswordReset — separate from VerificationToken because the Auth.js adapter
+   361→// has a specific contract for VerificationToken (email verification / magic link
+   362→// only) and overloading it would break the adapter. Single-use, expires in 1h.
+   363→// ──────────────────────────────────────────────────────────────────────────────
+   364→
+   365→model PasswordReset {
+   366→  id         String   @id @default(cuid())
+   367→  userId     String
+   368→  token      String   @unique
+   369→  expires    DateTime
+   370→  usedAt     DateTime?
+   371→  createdAt  DateTime @default(now())
+   372→
+   373→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   374→
+   375→  @@index([userId])
+   376→  @@index([token])
+   377→}
+   378→
+   379→// ──────────────────────────────────────────────────────────────────────────────
+   380→// TradingAccount — a broker account (DEMO or REAL) with a starting balance and
+   381→// a derived current balance. currentBalance is recomputed from
+   382→// startingBalance + transactions + trade P/L (Phase 4), never written directly
+   383→// outside that atomic recompute.
+   384→// ──────────────────────────────────────────────────────────────────────────────
+   385→
+   386→model TradingAccount {
+   387→  id              String       @id @default(cuid())
+   388→  userId          String
+   389→  name            String
+   390→  broker          String
+   391→  currency        String       @default("USD")
+   392→  type            AccountType  @default(DEMO)
+   393→  startingBalance Decimal      @default(0)
+   394→  currentBalance  Decimal      @default(0)
+   395→  isArchived      Boolean      @default(false)
+   396→  /// Phase 19: peak balance the account has ever reached. Lazily maintained
+   397→  /// by `trackHighWaterMark()` whenever the Withdrawal page or dashboard reads
+   398→  /// the status for a HIGH_WATER_MARK-baseline rule. null = not yet tracked.
+   399→  highWaterMark   Decimal?
+   400→  createdAt       DateTime     @default(now())
+   401→  updatedAt       DateTime     @updatedAt
+   402→
+   403→  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+   404→  transactions Transaction[]
+   405→  trades       Trade[]
+   406→  riskProfiles RiskProfile[]
+   407→  sessions     TradingSession[]
+   408→  balanceChecks BalanceCheck[]
+   409→  withdrawalRules WithdrawalRule[]
+   410→
+   411→  @@index([userId])
+   412→  @@index([userId, isArchived])
+   413→}
+   414→
+   415→model Transaction {
+   416→  id               String          @id @default(cuid())
+   417→  tradingAccountId String
+   418→  type             TransactionType
+   419→  amount           Decimal        
+   420→  note             String?
+   421→  occurredAt       DateTime        @default(now())
+   422→  createdAt        DateTime        @default(now())
+   423→  updatedAt        DateTime        @updatedAt
+   424→
+   425→  tradingAccount TradingAccount @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+   426→
+   427→  @@index([tradingAccountId, occurredAt])
+   428→}
+   429→
+   430→// ──────────────────────────────────────────────────────────────────────────────
+   431→// Strategy — user-defined labels for trade grouping. Per-user.
+   432→// ──────────────────────────────────────────────────────────────────────────────
+   433→
+   434→model Strategy {
+   435→  id          String   @id @default(cuid())
+   436→  userId      String
+   437→  name        String
+   438→  description String?
+   439→  color       String   @default("#64748b")
+   440→  isActive    Boolean  @default(true)
+   441→  // Phase 20: cached statistical-reliability metrics. Recomputed by
+   442→  // `recomputeStrategyStatsAction` whenever a trade with this strategy is
+   443→  // saved/closed/deleted. `isValidated` is true iff totalTrades ≥ 30 AND
+   444→  // the Wilson lower bound of the win rate exceeds the break-even win rate
+   445→  // for the strategy's average payout — i.e. the strategy is statistically
+   446→  // defensible, not a lucky streak.
+   447→  totalTrades           Int       @default(0)
+   448→  winRate                Decimal?  // 0–1, cached
+   449→  expectancyPerTrade    Decimal?  // signed, in account currency, cached
+   450→  profitFactor          Decimal?  // grossProfit / grossLoss, cached
+   451→  isValidated           Boolean   @default(false)
+   452→  lastValidatedAt       DateTime?
+   453→  createdAt   DateTime @default(now())
+   454→  updatedAt   DateTime @updatedAt
+   455→
+   456→  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+   457→  trades Trade[]
+   458→
+   459→  @@index([userId])
+   460→  @@unique([userId, name])
+   461→  @@index([userId, isValidated])
+   462→}
+   463→
+   464→// ──────────────────────────────────────────────────────────────────────────────
+   465→// Trade — the heart of the journal. Money fields are Decimal; payoutPercent
+   466→// is the broker's promised payout ratio (0.85 = 85%).
+   467→// balanceAfter is recomputed atomically on every trade state change.
+   468→// ──────────────────────────────────────────────────────────────────────────────
+   469→
+   470→model Trade {
+   471→  id               String         @id @default(cuid())
+   472→  userId           String
+   473→  tradingAccountId String
+   474→  strategyId       String?
+   475→
+   476→  asset            String
+   477→  direction        TradeDirection
+   478→  stake            Decimal       
+   479→  payoutPercent    Decimal       
+   480→  expiryMinutes    Int
+   481→  openedAt         DateTime       @default(now())
+   482→  closedAt         DateTime?
+   483→  result           TradeResult    @default(OPEN)
+   484→  profitLoss       Decimal        @default(0)
+   485→  balanceAfter     Decimal?      
+   486→
+   487→  timeframe        String?
+   488→  setupNotes        String?
+   489→  emotion          TradeEmotion?
+   490→  followedPlan     Boolean        @default(true)
+   491→  screenshotUrl     String?
+   492→  tags              Json           @default("[]")
+   493→
+   494→  createdAt        DateTime       @default(now())
+   495→  updatedAt        DateTime       @updatedAt
+   496→
+   497→  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+   498→  tradingAccount TradingAccount  @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+   499→  strategy        Strategy?      @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+   500→  tiltEvents     TiltEvent[]
+   501→
+   502→  @@index([userId, openedAt])
+   503→  @@index([tradingAccountId, openedAt])
+   504→  @@index([userId, result])
+   505→  @@index([userId, asset])
+   506→  @@index([strategyId])
+   507→}
+   508→
+   509→// ──────────────────────────────────────────────────────────────────────────────
+   510→// RiskProfile — the discipline rules. Per user (global) or per trading account.
+   511→// When tradingAccountId is null, applies to all of the user's accounts.
+   512→// ──────────────────────────────────────────────────────────────────────────────
+   513→
+   514→model RiskProfile {
+   515→  id                       String    @id @default(cuid())
+   516→  userId                   String
+   517→  tradingAccountId         String?
+   518→  riskPerTradePercent      Decimal   @default(2)
+   519→  maxDailyLossPercent      Decimal   @default(6)
+   520→  maxDailyLossAmount       Decimal? 
+   521→  dailyProfitTargetPercent Decimal?
+   522→  maxTradesPerDay          Int       @default(10)
+   523→  maxConsecutiveLosses     Int       @default(3)
+   524→  cooldownMinutes          Int       @default(15)
+   525→  maxOpenTrades            Int       @default(3)
+   526→  weeklyLossLimitPercent   Decimal?
+   527→  /// Phase 16: tilt detection fields
+   528→  tiltDetectionEnabled Boolean @default(true)
+   529→  tiltThreshold        Decimal?  // 0-100, default 60 (score >= threshold = TILT)
+   530→  rapidRetradeMinutes  Int?      // default 2 — minutes after a loss before re-entering
+   531→  stakeEscalationFactor Decimal? // default 1.5 — multiplier vs median stake
+   532→  maxTradesPerHour     Int?      // default 6 — rapid trading threshold
+   533→  lockoutEnabled           Boolean   @default(true)
+   534→  createdAt                DateTime  @default(now())
+   535→  updatedAt                DateTime  @updatedAt
+   536→
+   537→  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+   538→  tradingAccount TradingAccount? @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+   539→
+   540→  @@index([userId])
+   541→  @@unique([userId, tradingAccountId])
+   542→}
+   543→
+   544→// ──────────────────────────────────────────────────────────────────────────────
+   545→// StakingPlan — how the next stake is computed. config is JSON because each
+   546→// method has its own shape (FIXED_AMOUNT needs {amount}, KELLY_FRACTION needs
+   547→// {fraction, winRateEstimate, payoutPercent, balance}, etc.). Phase 8 validates
+   548→// the JSON shape per method.
+   549→// ──────────────────────────────────────────────────────────────────────────────
+   550→
+   551→model StakingPlan {
+   552→  id        String         @id @default(cuid())
+   553→  userId    String
+   554→  name      String
+   555→  method    StakingMethod
+   556→  config    Json
+   557→  isDefault Boolean        @default(false)
+   558→  createdAt DateTime       @default(now())
+   559→  updatedAt DateTime       @updatedAt
+   560→
+   561→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   562→
+   563→  @@index([userId])
+   564→  @@unique([userId, name])
+   565→}
+   566→
+   567→// ──────────────────────────────────────────────────────────────────────────────
+   568→// TradingSession — a deliberate "I'm trading now" block. Phase 10 will use
+   569→// startedAt/endedAt to auto-link trades made during the session.
+   570→// ──────────────────────────────────────────────────────────────────────────────
+   571→
+   572→model TradingSession {
+   573→  id           String             @id @default(cuid())
+   574→  userId       String
+   575→  tradingAccountId String
+   576→  startedAt    DateTime           @default(now())
+   577→  endedAt      DateTime?
+   578→  startBalance Decimal           
+   579→  endBalance   Decimal?          
+   580→  notes        String?
+   581→  mood         TradingSessionMood?
+   582→  createdAt    DateTime           @default(now())
+   583→  updatedAt    DateTime           @updatedAt
+   584→
+   585→  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+   586→  tradingAccount TradingAccount  @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+   587→
+   588→  @@index([userId, startedAt])
+   589→  @@index([tradingAccountId, startedAt])
+   590→}
+   591→
+   592→// ──────────────────────────────────────────────────────────────────────────────
+   593→// Goal — DAILY/WEEKLY/MONTHLY profit target or BALANCE_TARGET (reach $X).
+   594→// status lifecycle: ACTIVE → ACHIEVED | MISSED | CANCELLED.
+   595→// ──────────────────────────────────────────────────────────────────────────────
+   596→
+   597→model Goal {
+   598→  id           String     @id @default(cuid())
+   599→  userId       String
+   600→  type         GoalType
+   601→  targetAmount Decimal   
+   602→  startDate    DateTime
+   603→  endDate      DateTime
+   604→  status       GoalStatus @default(ACTIVE)
+   605→  createdAt    DateTime   @default(now())
+   606→  updatedAt    DateTime   @updatedAt
+   607→
+   608→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   609→
+   610→  @@index([userId, status])
+   611→  @@index([userId, type, startDate])
+   612→}
+   613→
+   614→// ──────────────────────────────────────────────────────────────────────────────
+   615→// Lockout — when a rule is breached, the user is locked out of trading until
+   616→// expiresAt (or until manually overridden with a reason + confirmation phrase).
+   617→// overriddenAt null = still active; non-null = was overridden.
+   618→// ──────────────────────────────────────────────────────────────────────────────
+   619→
+   620→model Lockout {
+   621→  id           String         @id @default(cuid())
+   622→  userId       String
+   623→  reason       LockoutReason
+   624→  startedAt    DateTime       @default(now())
+   625→  expiresAt    DateTime?
+   626→  overriddenAt DateTime?
+   627→  overrideReason String?
+   628→  createdAt    DateTime       @default(now())
+   629→  updatedAt    DateTime       @updatedAt
+   630→
+   631→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   632→
+   633→  @@index([userId, expiresAt])
+   634→  @@index([userId, reason])
+   635→}
+   636→
+   637→// ──────────────────────────────────────────────────────────────────────────────
+   638→// Notification — in-app bell (Phase 12 also routes via Resend email + optional
+   639→// Telegram/PWA push).
+   640→// ──────────────────────────────────────────────────────────────────────────────
+   641→
+   642→model Notification {
+   643→  id        String    @id @default(cuid())
+   644→  userId    String
+   645→  type      String
+   646→  title     String
+   647→  body      String
+   648→  readAt    DateTime?
+   649→  createdAt DateTime  @default(now())
+   650→
+   651→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   652→
+   653→  @@index([userId, readAt])
+   654→  @@index([userId, createdAt])
+   655→}
+   656→
+   657→// ──────────────────────────────────────────────────────────────────────────────
+   658→// AuditLog — every state-changing operation is logged for transparency and
+   659→// "discipline breach" reports (e.g. overrides show up here). meta is JSON to
+   660→// capture arbitrary before/after payloads.
+   661→// ──────────────────────────────────────────────────────────────────────────────
+   662→
+   663→model AuditLog {
+   664→  id        String   @id @default(cuid())
+   665→  userId    String
+   666→  action    String
+   667→  entity    String
+   668→  entityId  String
+   669→  meta      Json?
+   670→  createdAt DateTime @default(now())
+   671→
+   672→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   673→
+   674→  @@index([userId, createdAt])
+   675→  @@index([userId, entity, entityId])
+   676→}
+   677→
+   678→// ──────────────────────────────────────────────────────────────────────────────
+   679→// Phase 16 — Tilt detection events
+   680→// ──────────────────────────────────────────────────────────────────────────────
+   681→
+   682→model TiltEvent {
+   683→  id        String   @id @default(cuid())
+   684→  userId    String
+   685→  tradeId   String?
+   686→  score     Decimal
+   687→  level     String   // "CALM" | "CAUTION" | "TILT"
+   688→  signals   Json     // array of { signal, weight, detail }
+   689→  createdAt DateTime @default(now())
+   690→
+   691→  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+   692→  trade Trade? @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+   693→
+   694→  @@index([userId, createdAt])
+   695→  @@index([userId, level])
+   696→}
+   697→
+   698→// ──────────────────────────────────────────────────────────────────────────────
+   699→// Phase 17 — CancelledTradeAttempt: a trade the user typed in but aborted at
+   700→// the pre-trade confirmation screen. Proof of discipline: each row is money
+   701→// the user did NOT risk. No tradeId — the trade was never created.
+   702→// ──────────────────────────────────────────────────────────────────────────────
+   703→
+   704→model CancelledTradeAttempt {
+   705→  id        String   @id @default(cuid())
+   706→  userId    String
+   707→  stake     Decimal
+   708→  asset     String
+   709→  reason    String?  // optional free-text the user typed before cancelling
+   710→  createdAt DateTime @default(now())
+   711→
+   712→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   713→
+   714→  @@index([userId, createdAt])
+   715→}
+   716→
+   717→// ──────────────────────────────────────────────────────────────────────────────
+   718→// Phase 18 — BalanceCheck: a single point-in-time comparison between the
+   719→// app's computed balance and the user-entered real broker balance. Each row
+   720→// is resolved one of three ways:
+   721→//   MATCHED  — app and broker agreed within tolerance (no adjustment created)
+   722→//   ADJUSTED — mismatch resolved by creating an ADJUSTMENT transaction
+   723→//   IGNORED  — mismatch noted but dismissed with a free-text note
+   724→// The balance-accuracy score on the Accounts page is the share of MATCHED
+   725→// rows in the trailing 30-day window per account.
+   726→// ──────────────────────────────────────────────────────────────────────────────
+   727→
+   728→model BalanceCheck {
+   729→  id               String                 @id @default(cuid())
+   730→  userId           String
+   731→  tradingAccountId String
+   732→  appBalance       Decimal                 // our computed balance at check time
+   733→  brokerBalance    Decimal                 // user-entered real broker balance
+   734→  difference       Decimal                 // brokerBalance - appBalance (signed)
+   735→  // null = pending resolution (mismatch detected, waiting on the user to
+   736→  // choose ADJUST or IGNORE). MATCHED = within tolerance at check time
+   737→  // (terminal). ADJUSTED = mismatch resolved by creating an ADJUSTMENT
+   738→  // transaction (terminal). IGNORED = mismatch dismissed with a note
+   739→  // (terminal).
+   740→  resolution       BalanceCheckResolution?
+   741→  note             String?                 // optional note (used when IGNORED)
+   742→  checkedAt        DateTime               @default(now())
+   743→  createdAt        DateTime               @default(now())
+   744→
+   745→  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+   746→  tradingAccount TradingAccount @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+   747→
+   748→  @@index([userId, checkedAt])
+   749→  @@index([tradingAccountId, checkedAt])
+   750→  @@index([userId, resolution])
+   751→}
+   752→
+   753→// ──────────────────────────────────────────────────────────────────────────────
+   754→// Phase 19 — WithdrawalRule: a profit-taking rule per trading account. The
+   755→// rule's `type` decides how `value` is interpreted (percent / flat / threshold),
+   756→// the `baseline` decides what counts as "profit so far", and the `frequency`
+   757→// decides how often the dashboard + cron prompt the trader to withdraw.
+   758→//
+   759→// Each rule is scoped to ONE trading account — the same user can have different
+   760→// rules per account (e.g. withdraw 20% of weekly profit from the LIVE account,
+   761→// none from the DEMO). `isActive = false` pauses reminders without deleting
+   762→// the rule (the trader may re-enable later).
+   763→//
+   764→// `lastTriggeredAt` is stamped whenever `markWithdrawnAction` runs with this
+   765→// ruleId — the cron + dashboard use it to decide whether a withdrawal is "due"
+   766→// per the frequency.
+   767→// ──────────────────────────────────────────────────────────────────────────────
+   768→
+   769→model WithdrawalRule {
+   770→  id                String              @id @default(cuid())
+   771→  userId            String
+   772→  tradingAccountId  String
+   773→  type              WithdrawalRuleType
+   774→  /// Percent (0–100) for PERCENT_OF_PROFIT; flat amount for FIXED_AMOUNT;
+   775→  /// balance threshold for BALANCE_ABOVE_THRESHOLD.
+   776→  value             Decimal
+   777→  frequency         WithdrawalFrequency
+   778→  baseline          WithdrawalBaseline
+   779→  isActive          Boolean             @default(true)
+   780→  /// Last time this rule fired a withdrawal. Used by isWithdrawalDue to
+   781→  /// decide whether the rule is "due" again per its frequency.
+   782→  lastTriggeredAt   DateTime?
+   783→  createdAt         DateTime            @default(now())
+   784→  updatedAt         DateTime            @updatedAt
+   785→
+   786→  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+   787→  tradingAccount TradingAccount @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+   788→
+   789→  @@index([userId, isActive])
+   790→  @@index([tradingAccountId])
+   791→  @@index([userId, frequency])
+   792→}
+   793→
+   794→// ──────────────────────────────────────────────────────────────────────────────
+   795→// Phase 21 — DailyScore: one row per user per calendar day (in the user's
+   796→// timezone). Computed by `computeDailyScoreAction` on demand + by the daily
+   797→// cron at /api/cron/discipline-scores (recomputes yesterday for every user).
+   798→//
+   799→// The score is 0–100 with weights from DISCIPLINE_WEIGHTS in
+   800→// `/src/lib/behavior/discipline.ts`:
+   801→//   30 — stayed within risk-per-trade limit on every trade
+   802→//   25 — no daily loss or trade-count breach
+   803→//   15 — no overrides of lockouts or warnings
+   804→//   15 — followedPlan true on all trades
+   805→//   10 — no TILT events
+   806→//    5 — pre-trade checklist completed and balance check done
+   807→//
+   808→// `isRestDay` = true when the day had 0 trades AND 0 breaches of any kind.
+   809→// Rest days are "neutral" in the streak logic — they keep the streak
+   810→// continuing without incrementing it.
+   811→//
+   812→// `date` is a "YYYY-MM-DD" string in the user's timezone — no TZ ambiguity
+   813→// (using a DateTime would force UTC midnight which doesn't match a trader's
+   814→// wall-clock day). The `@@unique([userId, date])` constraint enforces one
+   815→// row per user per day.
+   816→// ──────────────────────────────────────────────────────────────────────────────
+   817→
+   818→model DailyScore {
+   819→  id          String   @id @default(cuid())
+   820→  userId      String
+   821→  /// "YYYY-MM-DD" in the user's timezone.
+   822→  date        String
+   823→  /// 0–100 composite discipline score.
+   824→  score       Decimal
+   825→  /// Breakdown of the score per rule + the deductions (lost points +
+   826→  /// tradeIds responsible) so the UI drawer can explain "what cost you points".
+   827→  breakdown   Json
+   828→  /// True iff the day had 0 trades AND 0 breaches — used by the streak logic
+   829→  /// to keep the streak continuing without incrementing.
+   830→  isRestDay   Boolean  @default(false)
+   831→  createdAt   DateTime @default(now())
+   832→  updatedAt   DateTime @updatedAt
+   833→
+   834→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   835→
+   836→  @@unique([userId, date])
+   837→  @@index([userId, date])
+   838→}
+   839→
+   840→// ──────────────────────────────────────────────────────────────────────────────
+   841→// Phase 22 — NewsEvent: an economic calendar event (e.g. "US NFP",
+   842→// "ECB Rate Decision", "UK CPI y/y"). Cached in the DB by the
+   843→// `refreshNewsEventsAction` server action, which calls the configured
+   844→// provider (see /src/lib/news/provider.ts) and upserts rows.
+   845→//
+   846→// `currency` is the ISO 4217 code of the affected currency (e.g. "USD",
+   847→// "EUR") — or "*" for events that affect all currencies (e.g. a global
+   848→// risk event). The Add Trade warning joins on this field to find events
+   849→// relevant to the traded pair (e.g. "EUR/USD" → currencies "EUR" + "USD").
+   850→//
+   851→// `impact` is one of "LOW", "MEDIUM", "HIGH". The Add Trade warning only
+   852→// fires for "HIGH"-impact events.
+   853→//
+   854→// `forecast` and `actual` are strings (provider-dependent — e.g. "2.5%",
+   855→// "1.8M", "Hold"). `actual` is null until the event is released.
+   856→//
+   857→// The `@@unique([source, scheduledAt, title])` constraint prevents
+   858→// duplicate events from the same source when the cron refresh runs.
+   859→// ──────────────────────────────────────────────────────────────────────────────
+   860→
+   861→model NewsEvent {
+   862→  id           String   @id @default(cuid())
+   863→  /// ISO 4217 currency code ("USD", "EUR", "GBP", ...) or "*" for global.
+   864→  currency     String
+   865→  title        String
+   866→  impact       String   // "LOW" | "MEDIUM" | "HIGH"
+   867→  scheduledAt  DateTime
+   868→  /// Provider name ("ConsoleProvider" for dev, "ForexFactory" / "Investing" /
+   869→  /// "Custom" for prod).
+   870→  source       String
+   871→  forecast     String?
+   872→  actual       String?
+   873→  url          String?
+   874→  createdAt    DateTime @default(now())
+   875→  updatedAt    DateTime @updatedAt
+   876→
+   877→  @@unique([source, scheduledAt, title])
+   878→  @@index([scheduledAt])
+   879→  @@index([currency, scheduledAt])
+   880→  @@index([impact, scheduledAt])
+   881→}
+   882→
+   883→// ──────────────────────────────────────────────────────────────────────────────
+   884→// Phase 23 — TelegramLink: links a RiskGuard user to a Telegram chat.
+   885→//
+   886→// Link flow:
+   887→//   1. User clicks "Generate link code" in Settings → a one-time code
+   888→//      (e.g. "RG-4F2A-9C1B") is stored on User.telegramLinkCode + expires
+   889→//      in 15 minutes.
+   890→//   2. User sends "/start RG-4F2A-9C1B" to the bot in Telegram.
+   891→//   3. Telegram POSTs the update to /api/telegram/webhook (verified via the
+   892→//      X-Telegram-Bot-Api-Secret-Token header against TELEGRAM_WEBHOOK_SECRET).
+   893→//   4. The webhook handler finds the user by the code, creates this
+   894→//      TelegramLink row (userId + chatId + verifiedAt=now), and clears the
+   895→//      pending code.
+   896→//
+   897→// The @@unique([chatId]) constraint prevents two users from linking the
+   898→// same Telegram chat (the second link attempt is rejected with a clear
+   899→// error). The @@unique([userId]) constraint enforces one chat per user
+   900→// (re-linking replaces the old chat).
+   901→// ──────────────────────────────────────────────────────────────────────────────
+   902→
+   903→model TelegramLink {
+   904→  id         String   @id @default(cuid())
+   905→  userId     String
+   906→  /// Telegram chat ID (string — Telegram IDs can exceed JS safe integer).
+   907→  chatId     String
+   908→  /// When the link was verified (via /start CODE). Null = pending.
+   909→  verifiedAt DateTime @default(now())
+   910→  /// Telegram username (for display in Settings; optional).
+   911→  username   String?
+   912→  createdAt  DateTime @default(now())
+   913→  updatedAt  DateTime @updatedAt
+   914→
+   915→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   916→
+   917→  @@unique([userId])
+   918→  @@unique([chatId])
+   919→}
+   920→
+   921→// ──────────────────────────────────────────────────────────────────────────────
+   922→// Phase 23 — WeeklyReview: AI-generated (or rule-based fallback) weekly
+   923→// review. One row per user per ISO week.
+   924→//
+   925→// `source` records how the review was generated: "ai" (Anthropic Claude)
+   926→// or "fallback" (Phase 9's rule-based insights — used when the AI API
+   927→// fails or the user hasn't opted in).
+   928→//
+   929→// `metrics` stores the aggregated stats that were sent to the AI (or used
+   930→// by the fallback) so the user can see exactly what data was shared —
+   931→// transparency for the privacy toggle.
+   932→// ──────────────────────────────────────────────────────────────────────────────
+   933→
+   934→model WeeklyReview {
+   935→  id         String   @id @default(cuid())
+   936→  userId     String
+   937→  /// ISO week start (Monday 00:00 UTC of that week).
+   938→  weekStart  DateTime
+   939→  /// ISO week end (Sunday 23:59:59 UTC of that week).
+   940→  weekEnd    DateTime
+   941→  /// Plain-language review (AI-generated or rule-based fallback).
+   942→  summary    String
+   943→  /// 3 specific, actionable suggestions (JSON array of strings).
+   944→  suggestions Json
+   945→  /// "ai" or "fallback" — how this review was generated.
+   946→  source     String   @default("fallback")
+   947→  /// The aggregated stats that were sent to the AI (or used by the
+   948→  /// fallback) — transparency for the privacy toggle.
+   949→  metrics    Json
+   950→  createdAt  DateTime @default(now())
+   951→
+   952→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+   953→
+   954→  @@unique([userId, weekStart])
+   955→  @@index([userId, weekStart])
+   956→}
+   957→
+   958→// ──────────────────────────────────────────────────────────────────────────────
+   959→// Phase 24 — Billing enums.
+   960→//
+   961→// The user spec says FREE + PRO (not ELITE). PART2_NOTES suggested ELITE —
+   962→// we follow the user spec's two-tier model. ELITE can be added later by
+   963→// extending the enum + the plans config without breaking existing data.
+   964→// ──────────────────────────────────────────────────────────────────────────────
+   965→
+   966→enum SubscriptionPlan {
+   967→  FREE
+   968→  PRO
+   969→}
+   970→
+   971→enum SubscriptionStatus {
+   972→  ACTIVE
+   973→  PAST_DUE
+   974→  CANCELLED
+   975→  EXPIRED
+   976→}
+   977→
+   978→enum PaymentProvider {
+   979→  PAYSTACK
+   980→  STRIPE
+   981→}
+   982→
+   983→// ──────────────────────────────────────────────────────────────────────────────
+   984→// Phase 24 — Subscription: the user's billing state. One row per user
+   985→// (enforced by @@unique([userId])). Created automatically on signup as a
+   986→// FREE plan.
+   987→//
+   988→// Lifecycle:
+   989→//   signup      → FREE / ACTIVE
+   990→//   checkout    → FREE / ACTIVE  →  PRO / ACTIVE (after webhook confirms)
+   991→//   cancel      → PRO / CANCELLED (cancelAtPeriodEnd=true, currentPeriodEnd
+   992→//                 stays — the user keeps access until the period ends)
+   993→//   resume      → PRO / CANCELLED  →  PRO / ACTIVE (cancelAtPeriodEnd=false)
+   994→//   payment fail → PRO / PAST_DUE (3-day grace period, then EXPIRED → FREE)
+   995→//   expire      → PRO / EXPIRED  →  FREE / ACTIVE (the row is updated in
+   996→//                 place; the user keeps READ access to their data per the
+   997→//                 spec — "never delete data because of a plan change")
+   998→// ──────────────────────────────────────────────────────────────────────────────
+   999→
+  1000→model Subscription {
+  1001→  id                      String             @id @default(cuid())
+  1002→  userId                  String
+  1003→  plan                    SubscriptionPlan   @default(FREE)
+  1004→  status                  SubscriptionStatus @default(ACTIVE)
+  1005→  paymentProvider         PaymentProvider?
+  1006→  providerCustomerId      String?
+  1007→  providerSubscriptionId  String?
+  1008→  currentPeriodStart      DateTime?
+  1009→  currentPeriodEnd       DateTime?
+  1010→  /// True when the user cancelled but still has access until currentPeriodEnd.
+  1011→  /// Webhook sets this to true on cancellation, false on resume.
+  1012→  cancelAtPeriodEnd      Boolean            @default(false)
+  1013→  /// Phase 24: when the grace period ends (3 days after a failed payment).
+  1014→  /// Set by the webhook on payment failure; checked by the daily cron
+  1015→  /// /api/cron/billing-grace. Null when no grace period is active.
+  1016→  gracePeriodEndsAt      DateTime?
+  1017→  createdAt              DateTime           @default(now())
+  1018→  updatedAt              DateTime           @updatedAt
+  1019→
+  1020→  user User @relation("UserSubscription", fields: [userId], references: [id])
+  1021→
+  1022→  @@unique([userId])
+  1023→  @@index([userId, status])
+  1024→}
+  1025→
+  1026→// ──────────────────────────────────────────────────────────────────────────────
+  1027→// Phase 24 — Payment: a single payment record (invoice). One row per
+  1028→// successful or failed payment. Used for the billing history table +
+  1029→// the invoice links on the Billing page.
+  1030→// ──────────────────────────────────────────────────────────────────────────────
+  1031→
+  1032→model Payment {
+  1033→  id                String           @id @default(cuid())
+  1034→  userId            String
+  1035→  amount            Decimal
+  1036→  currency          String           @default("NGN")
+  1037→  provider          PaymentProvider
+  1038→  providerPaymentId String?
+  1039→  /// "PENDING" | "SUCCESS" | "FAILED"
+  1040→  status            String           @default("PENDING")
+  1041→  invoiceUrl        String?
+  1042→  createdAt         DateTime         @default(now())
+  1043→
+  1044→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  1045→
+  1046→  @@index([userId, createdAt])
+  1047→  @@index([provider, providerPaymentId])
+  1048→}
+  1049→
+  1050→// ──────────────────────────────────────────────────────────────────────────────
+  1051→// Phase 24 — ProcessedEvent: webhook idempotency. Stores the provider +
+  1052→// event ID of every processed webhook event so duplicates don't
+  1053→// double-apply (e.g. Paystack retrying a charge.success event).
+  1054→//
+  1055→// The webhook handler checks this table BEFORE processing — if the event
+  1056→// ID exists, it returns 200 immediately without re-applying the action.
+  1057→// ──────────────────────────────────────────────────────────────────────────────
+  1058→
+  1059→model ProcessedEvent {
+  1060→  id          String   @id @default(cuid())
+  1061→  provider    PaymentProvider
+  1062→  /// Unique event ID from the provider (Paystack reference or Stripe event ID).
+  1063→  eventId     String
+  1064→  eventType   String?
+  1065→  processedAt DateTime @default(now())
+  1066→
+  1067→  @@unique([provider, eventId])
+  1068→  @@index([provider, processedAt])
+  1069→}
+  1070→
+  1071→

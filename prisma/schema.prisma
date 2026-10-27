@@ -1,0 +1,1077 @@
+// RiskGuard Prisma schema — Phase 1: Database Schema
+//
+// All money fields use Prisma's `Decimal` type — never Float (rule #1).
+// Percentages are also Decimal (e.g. payoutPercent 0.85 = 85% broker payout).
+//
+// Sandbox/dev uses SQLite. The `Decimal` Prisma type preserves arbitrary
+// precision on both SQLite (stored as TEXT) and Postgres (stored as NUMERIC).
+// Phase 14's production migration will tighten the precision via a raw SQL
+// migration step: money → NUMERIC(18, 2), percentages → NUMERIC(7, 4).
+//
+// To switch to Postgres: change provider to "postgresql" and point DATABASE_URL
+// at your Postgres connection string (see docker-compose.yml).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Enums — declared as Prisma enums (Postgres-native) but the SQLite provider
+// falls back to String columns automatically. The semantic contract is the same.
+// ──────────────────────────────────────────────────────────────────────────────
+
+enum AccountType {
+  DEMO
+  REAL
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  BONUS
+  ADJUSTMENT
+}
+
+enum TradeDirection {
+  CALL
+  PUT
+}
+
+enum TradeResult {
+  WIN
+  LOSS
+  TIE
+  OPEN
+}
+
+enum TradeEmotion {
+  CALM
+  CONFIDENT
+  FEARFUL
+  GREEDY
+  REVENGE
+  TIRED
+  BORED
+}
+
+enum StakingMethod {
+  FIXED_AMOUNT
+  FIXED_PERCENT
+  COMPOUNDING
+  ANTI_MARTINGALE
+  FIBONACCI
+  MARTINGALE
+  KELLY_FRACTION
+  CUSTOM
+}
+
+enum GoalType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  BALANCE_TARGET
+}
+
+enum GoalStatus {
+  ACTIVE
+  ACHIEVED
+  MISSED
+  CANCELLED
+}
+
+enum LockoutReason {
+  DAILY_LOSS
+  CONSEC_LOSSES
+  MAX_TRADES
+  WEEKLY_LOSS
+  MANUAL
+}
+
+enum TradingSessionMood {
+  FOCUSED
+  CALM
+  TIRED
+  FRUSTRATED
+  CONFIDENT
+  REVENGEFUL
+}
+
+// Phase 17 — whether the pre-trade confirmation screen asks for a
+// "reason for entry" text, and whether it is mandatory.
+enum PreTradeReasonMode {
+  OFF
+  OPTIONAL
+  REQUIRED
+}
+
+// Phase 18 — the outcome of a BalanceCheck row.
+//   MATCHED   = app balance and broker balance agreed (within tolerance)
+//   ADJUSTED  = mismatch resolved by creating an ADJUSTMENT transaction
+//   IGNORED   = mismatch noted but dismissed with a free-text note
+enum BalanceCheckResolution {
+  MATCHED
+  ADJUSTED
+  IGNORED
+}
+
+// Phase 18 — how often the "time to verify your broker balance" reminder
+// surfaces. OFF disables the prompt entirely; the user can still trigger a
+// check manually from the Accounts / Balance Sync pages.
+enum BalanceSyncReminderFrequency {
+  DAILY
+  WEEKLY
+  OFF
+}
+
+// Phase 19 — the strategy a WithdrawalRule uses to compute the recommended
+// withdrawal amount. PERCENT_OF_PROFIT takes `value`% of profit-since-baseline;
+// FIXED_AMOUNT recommends a flat `value`; BALANCE_ABOVE_THRESHOLD recommends
+// everything above `value` (a balance target, not a profit percent).
+enum WithdrawalRuleType {
+  PERCENT_OF_PROFIT
+  FIXED_AMOUNT
+  BALANCE_ABOVE_THRESHOLD
+}
+
+// Phase 19 — how often a withdrawal rule is "due". The cron checker compares
+// the rule's lastTriggeredAt to now to decide whether to fire a reminder.
+enum WithdrawalFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+// Phase 19 — the reference point for "profit since baseline". The baseline
+// determines what counts as withdrawable profit:
+//   STARTING_BALANCE   — profit = currentBalance − startingBalance
+//   LAST_WITHDRAWAL    — profit = currentBalance − (balance right after the last withdrawal)
+//   HIGH_WATER_MARK    — profit = currentBalance − highWaterMark (peak balance)
+enum WithdrawalBaseline {
+  STARTING_BALANCE
+  LAST_WITHDRAWAL
+  HIGH_WATER_MARK
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// User — root entity for multi-tenant isolation (rule #3: every query is
+// scoped by userId).
+// ──────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  name          String?
+  email         String   @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  image         String?
+  timezone      String   @default("UTC")
+  baseCurrency  String   @default("USD")
+  isOnboarded   Boolean  @default(false)
+  /// Phase 25: increment to invalidate all outstanding JWTs (sign out of all
+  /// devices). The jwt callback re-reads this on the periodic sessionVersion
+  /// check; mismatch → token is stripped and the user is forced back to /login.
+  sessionVersion Int     @default(0)
+  /// Phase 10: per-user pre-trade checklist items (JSON array of strings).
+  checklistItems Json?
+  /// Phase 10: daily journal entries (JSON map of "YYYY-MM-DD" → reflection text).
+  dailyJournal  Json?
+  /// Phase 12: notification preferences (JSON map of type → {inApp, email}).
+  notificationPrefs Json?
+  /// Phase 12: trading hours (JSON: { start: "09:00", end: "17:00", days: [1,2,3,4,5] }).
+  tradingHours Json?
+  /// Phase 16: tilt score (0-100 composite).
+  tiltScore    Decimal?
+  /// Phase 16: when tilt was last detected.
+  lastTiltAt  DateTime?
+  /// Phase 17: skip the pre-trade confirmation screen on DEMO accounts
+  /// (REAL accounts always confirm — discipline-first).
+  preTradeConfirmSkipDemo   Boolean @default(false)
+  /// Phase 17: seconds the "Confirm trade" button stays disabled (0-15, default 5).
+  preTradeCooldownSeconds   Int     @default(5)
+  /// Phase 17: require the "This trade follows my plan" checkbox in the modal.
+  preTradeRequirePlanCheckbox Boolean @default(false)
+  /// Phase 17: whether the modal asks for a quick "reason for entry".
+  preTradeReasonMode        PreTradeReasonMode @default(OPTIONAL)
+  /// Phase 18: tolerance (in percent, 0.5 = 0.5%) below which a balance check
+  /// is automatically marked MATCHED instead of triggering an adjustment flow.
+  balanceSyncTolerancePercent Decimal @default(0.5)
+  /// Phase 18: how often to surface the "time to verify your broker balance"
+  /// reminder banner on the dashboard. OFF disables the prompt.
+  balanceSyncReminderFrequency BalanceSyncReminderFrequency @default(DAILY)
+  /// Phase 18: last time the prompt was shown. Used by shouldPromptBalanceCheck
+  /// to suppress it for the rest of the day (DAILY) or the rest of the week
+  /// (WEEKLY) — purely a display-cookie, not authoritative for any accounting.
+  balanceSyncLastPromptedAt DateTime?
+  /// Phase 19: optional — when todayPL/balance >= this percent, prompt the
+  /// trader to stop trading and bank some profit. null = disabled.
+  bigWinDayPercent Decimal?
+  /// Phase 19: last time the big-win-day banner was shown. Used to suppress
+  /// re-prompting within the same trading day.
+  bigWinDayLastPromptedAt DateTime?
+  /// Phase 21: today's discipline score (0-100), cached for fast dashboard
+  /// reads. Null until the first computation. Recomputed by
+  /// `computeDailyScoreAction` on demand and by the daily cron at
+  /// /api/cron/discipline-scores (recomputes yesterday for every user).
+  disciplineScore          Decimal?
+  /// Phase 21: when the cached disciplineScore was last recomputed.
+  disciplineScoreUpdatedAt DateTime?
+  /// Phase 22: when true, the Add Trade form warns about upcoming high-impact
+  /// news events for the traded pair's currencies within the configured
+  /// window (default 15 minutes). Disable to suppress the warning entirely.
+  newsWarningEnabled       Boolean @default(true)
+  /// Phase 22: how many minutes before/after a high-impact news event the
+  /// Add Trade warning fires. Default 15. Configurable per-user.
+  newsWarningMinutes       Int     @default(15)
+  /// Phase 23: master switch for Telegram alerts. When false, no alerts are
+  /// sent regardless of per-alert toggles. The TelegramLink row can still
+  /// exist (the link isn't broken by disabling).
+  telegramAlertsEnabled    Boolean @default(true)
+  /// Phase 23: set by the /stop Telegram command — pauses alerts without
+  /// unlinking. The /start command (without a code) resumes.
+  telegramAlertsPaused     Boolean @default(false)
+  /// Phase 23: "HH:MM" in the user's TZ for the daily summary alert.
+  /// null = no daily summary.
+  telegramDailySummaryTime String?
+  /// Phase 23: one-time link code for /start CODE. Null when no pending link.
+  telegramLinkCode         String?
+  /// Phase 23: when the link code expires (15 min after generation).
+  telegramLinkCodeExpiresAt DateTime?
+  /// Phase 23: AI weekly review opt-in. OFF by default per spec — the user
+  /// must explicitly enable it after reading the clear explanation of what
+  /// data is sent (aggregated stats only, no email/name/screenshots).
+  aiReviewEnabled          Boolean @default(false)
+  /// Phase 24: the user's subscription (one-to-one back-reference to the
+  /// Subscription model which owns the userId FK). Resolved via
+  /// `db.subscription.findUnique({ where: { userId } })` — no separate
+  /// subscriptionId field needed (the @@unique([userId]) on Subscription
+  /// enforces one-per-user).
+  subscription              Subscription? @relation("UserSubscription")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Auth.js Prisma adapter relations — Phase 2.
+  accounts        Account[]
+  authenticators  Authenticator[]
+  authSessions    AuthSession[]
+  verificationTokens VerificationToken[]
+
+  // RiskGuard domain relations
+  tradingAccounts TradingAccount[]
+  strategies      Strategy[]
+  trades          Trade[]
+  riskProfiles    RiskProfile[]
+  stakingPlans    StakingPlan[]
+  sessions        TradingSession[]
+  goals           Goal[]
+  lockouts        Lockout[]
+  notifications   Notification[]
+  auditLogs      AuditLog[]
+  passwordResets PasswordReset[]
+  tiltEvents     TiltEvent[]
+  cancelledTradeAttempts CancelledTradeAttempt[]
+  balanceChecks  BalanceCheck[]
+  withdrawalRules WithdrawalRule[]
+  dailyScores    DailyScore[]
+  telegramLink   TelegramLink?
+  weeklyReviews  WeeklyReview[]
+  payments       Payment[]
+}
+
+// Auth.js adapter models — see https://authjs.dev/adapters/prisma
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token         String?
+  session_state     String?
+  /// Phase 25: when this OAuth link was first created. Useful for the
+  /// "Connected accounts" UI in Settings. Not used by the Auth.js adapter.
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Authenticator {
+  credentialID         String  @id
+  userId               String
+  providerAccountId    String
+  credentialPublicKey  String
+  counter              Int
+  credentialDeviceType String
+  credentialBackedUp   Boolean
+  transports           String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, providerAccountId])
+  @@index([userId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Session — database-backed session (PROJECT_RULES.md Phase 0 decision: choose
+// database sessions, NOT JWT). Database sessions:
+//   1. Can be revoked server-side instantly (logout-everywhere, security incident)
+//   2. Stolen cookie only contains an opaque ID — no user data leaked
+//   3. Every request validates against DB, so revocations take effect immediately
+//   4. Pairs cleanly with server actions (need user data anyway)
+// Cost: per-request DB hit — fine with Prisma singleton + connection pooling.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model AuthSession {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expires])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// VerificationToken — used by Auth.js adapter for email verification + magic
+// link flows (token + identifier = email + expires). Single-use.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [identifier], references: [email], onDelete: Cascade)
+
+  @@unique([identifier, token])
+  @@index([identifier])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PasswordReset — separate from VerificationToken because the Auth.js adapter
+// has a specific contract for VerificationToken (email verification / magic link
+// only) and overloading it would break the adapter. Single-use, expires in 1h.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model PasswordReset {
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  expires    DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// TradingAccount — a broker account (DEMO or REAL) with a starting balance and
+// a derived current balance. currentBalance is recomputed from
+// startingBalance + transactions + trade P/L (Phase 4), never written directly
+// outside that atomic recompute.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model TradingAccount {
+  id              String       @id @default(cuid())
+  userId          String
+  name            String
+  broker          String
+  currency        String       @default("USD")
+  type            AccountType  @default(DEMO)
+  startingBalance Decimal      @default(0)
+  currentBalance  Decimal      @default(0)
+  isArchived      Boolean      @default(false)
+  /// Phase 19: peak balance the account has ever reached. Lazily maintained
+  /// by `trackHighWaterMark()` whenever the Withdrawal page or dashboard reads
+  /// the status for a HIGH_WATER_MARK-baseline rule. null = not yet tracked.
+  highWaterMark   Decimal?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  trades       Trade[]
+  riskProfiles RiskProfile[]
+  sessions     TradingSession[]
+  balanceChecks BalanceCheck[]
+  withdrawalRules WithdrawalRule[]
+
+  @@index([userId])
+  @@index([userId, isArchived])
+}
+
+model Transaction {
+  id               String          @id @default(cuid())
+  tradingAccountId String
+  type             TransactionType
+  amount           Decimal        
+  note             String?
+  occurredAt       DateTime        @default(now())
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  tradingAccount TradingAccount @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+
+  @@index([tradingAccountId, occurredAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Strategy — user-defined labels for trade grouping. Per-user.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model Strategy {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  color       String   @default("#64748b")
+  isActive    Boolean  @default(true)
+  // Phase 20: cached statistical-reliability metrics. Recomputed by
+  // `recomputeStrategyStatsAction` whenever a trade with this strategy is
+  // saved/closed/deleted. `isValidated` is true iff totalTrades ≥ 30 AND
+  // the Wilson lower bound of the win rate exceeds the break-even win rate
+  // for the strategy's average payout — i.e. the strategy is statistically
+  // defensible, not a lucky streak.
+  totalTrades           Int       @default(0)
+  winRate                Decimal?  // 0–1, cached
+  expectancyPerTrade    Decimal?  // signed, in account currency, cached
+  profitFactor          Decimal?  // grossProfit / grossLoss, cached
+  isValidated           Boolean   @default(false)
+  lastValidatedAt       DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trades Trade[]
+
+  @@index([userId])
+  @@unique([userId, name])
+  @@index([userId, isValidated])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Trade — the heart of the journal. Money fields are Decimal; payoutPercent
+// is the broker's promised payout ratio (0.85 = 85%).
+// balanceAfter is recomputed atomically on every trade state change.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model Trade {
+  id               String         @id @default(cuid())
+  userId           String
+  tradingAccountId String
+  strategyId       String?
+
+  asset            String
+  direction        TradeDirection
+  stake            Decimal       
+  payoutPercent    Decimal       
+  expiryMinutes    Int
+  openedAt         DateTime       @default(now())
+  closedAt         DateTime?
+  result           TradeResult    @default(OPEN)
+  profitLoss       Decimal        @default(0)
+  balanceAfter     Decimal?      
+
+  timeframe        String?
+  setupNotes        String?
+  emotion          TradeEmotion?
+  followedPlan     Boolean        @default(true)
+  screenshotUrl     String?
+  tags              Json           @default("[]")
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tradingAccount TradingAccount  @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+  strategy        Strategy?      @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  tiltEvents     TiltEvent[]
+
+  @@index([userId, openedAt])
+  @@index([tradingAccountId, openedAt])
+  @@index([userId, result])
+  @@index([userId, asset])
+  @@index([strategyId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RiskProfile — the discipline rules. Per user (global) or per trading account.
+// When tradingAccountId is null, applies to all of the user's accounts.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model RiskProfile {
+  id                       String    @id @default(cuid())
+  userId                   String
+  tradingAccountId         String?
+  riskPerTradePercent      Decimal   @default(2)
+  maxDailyLossPercent      Decimal   @default(6)
+  maxDailyLossAmount       Decimal? 
+  dailyProfitTargetPercent Decimal?
+  maxTradesPerDay          Int       @default(10)
+  maxConsecutiveLosses     Int       @default(3)
+  cooldownMinutes          Int       @default(15)
+  maxOpenTrades            Int       @default(3)
+  weeklyLossLimitPercent   Decimal?
+  /// Phase 16: tilt detection fields
+  tiltDetectionEnabled Boolean @default(true)
+  tiltThreshold        Decimal?  // 0-100, default 60 (score >= threshold = TILT)
+  rapidRetradeMinutes  Int?      // default 2 — minutes after a loss before re-entering
+  stakeEscalationFactor Decimal? // default 1.5 — multiplier vs median stake
+  maxTradesPerHour     Int?      // default 6 — rapid trading threshold
+  lockoutEnabled           Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tradingAccount TradingAccount? @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@unique([userId, tradingAccountId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// StakingPlan — how the next stake is computed. config is JSON because each
+// method has its own shape (FIXED_AMOUNT needs {amount}, KELLY_FRACTION needs
+// {fraction, winRateEstimate, payoutPercent, balance}, etc.). Phase 8 validates
+// the JSON shape per method.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model StakingPlan {
+  id        String         @id @default(cuid())
+  userId    String
+  name      String
+  method    StakingMethod
+  config    Json
+  isDefault Boolean        @default(false)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@unique([userId, name])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// TradingSession — a deliberate "I'm trading now" block. Phase 10 will use
+// startedAt/endedAt to auto-link trades made during the session.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model TradingSession {
+  id           String             @id @default(cuid())
+  userId       String
+  tradingAccountId String
+  startedAt    DateTime           @default(now())
+  endedAt      DateTime?
+  startBalance Decimal           
+  endBalance   Decimal?          
+  notes        String?
+  mood         TradingSessionMood?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tradingAccount TradingAccount  @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@index([tradingAccountId, startedAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Goal — DAILY/WEEKLY/MONTHLY profit target or BALANCE_TARGET (reach $X).
+// status lifecycle: ACTIVE → ACHIEVED | MISSED | CANCELLED.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model Goal {
+  id           String     @id @default(cuid())
+  userId       String
+  type         GoalType
+  targetAmount Decimal   
+  startDate    DateTime
+  endDate      DateTime
+  status       GoalStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, type, startDate])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Lockout — when a rule is breached, the user is locked out of trading until
+// expiresAt (or until manually overridden with a reason + confirmation phrase).
+// overriddenAt null = still active; non-null = was overridden.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model Lockout {
+  id           String         @id @default(cuid())
+  userId       String
+  reason       LockoutReason
+  startedAt    DateTime       @default(now())
+  expiresAt    DateTime?
+  overriddenAt DateTime?
+  overrideReason String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([userId, reason])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Notification — in-app bell (Phase 12 also routes via Resend email + optional
+// Telegram/PWA push).
+// ──────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// AuditLog — every state-changing operation is logged for transparency and
+// "discipline breach" reports (e.g. overrides show up here). meta is JSON to
+// capture arbitrary before/after payloads.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  entity    String
+  entityId  String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, entity, entityId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 16 — Tilt detection events
+// ──────────────────────────────────────────────────────────────────────────────
+
+model TiltEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  tradeId   String?
+  score     Decimal
+  level     String   // "CALM" | "CAUTION" | "TILT"
+  signals   Json     // array of { signal, weight, detail }
+  createdAt DateTime @default(now())
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trade Trade? @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([userId, level])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 17 — CancelledTradeAttempt: a trade the user typed in but aborted at
+// the pre-trade confirmation screen. Proof of discipline: each row is money
+// the user did NOT risk. No tradeId — the trade was never created.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model CancelledTradeAttempt {
+  id        String   @id @default(cuid())
+  userId    String
+  stake     Decimal
+  asset     String
+  reason    String?  // optional free-text the user typed before cancelling
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 18 — BalanceCheck: a single point-in-time comparison between the
+// app's computed balance and the user-entered real broker balance. Each row
+// is resolved one of three ways:
+//   MATCHED  — app and broker agreed within tolerance (no adjustment created)
+//   ADJUSTED — mismatch resolved by creating an ADJUSTMENT transaction
+//   IGNORED  — mismatch noted but dismissed with a free-text note
+// The balance-accuracy score on the Accounts page is the share of MATCHED
+// rows in the trailing 30-day window per account.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model BalanceCheck {
+  id               String                 @id @default(cuid())
+  userId           String
+  tradingAccountId String
+  appBalance       Decimal                 // our computed balance at check time
+  brokerBalance    Decimal                 // user-entered real broker balance
+  difference       Decimal                 // brokerBalance - appBalance (signed)
+  // null = pending resolution (mismatch detected, waiting on the user to
+  // choose ADJUST or IGNORE). MATCHED = within tolerance at check time
+  // (terminal). ADJUSTED = mismatch resolved by creating an ADJUSTMENT
+  // transaction (terminal). IGNORED = mismatch dismissed with a note
+  // (terminal).
+  resolution       BalanceCheckResolution?
+  note             String?                 // optional note (used when IGNORED)
+  checkedAt        DateTime               @default(now())
+  createdAt        DateTime               @default(now())
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tradingAccount TradingAccount @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, checkedAt])
+  @@index([tradingAccountId, checkedAt])
+  @@index([userId, resolution])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 19 — WithdrawalRule: a profit-taking rule per trading account. The
+// rule's `type` decides how `value` is interpreted (percent / flat / threshold),
+// the `baseline` decides what counts as "profit so far", and the `frequency`
+// decides how often the dashboard + cron prompt the trader to withdraw.
+//
+// Each rule is scoped to ONE trading account — the same user can have different
+// rules per account (e.g. withdraw 20% of weekly profit from the LIVE account,
+// none from the DEMO). `isActive = false` pauses reminders without deleting
+// the rule (the trader may re-enable later).
+//
+// `lastTriggeredAt` is stamped whenever `markWithdrawnAction` runs with this
+// ruleId — the cron + dashboard use it to decide whether a withdrawal is "due"
+// per the frequency.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model WithdrawalRule {
+  id                String              @id @default(cuid())
+  userId            String
+  tradingAccountId  String
+  type              WithdrawalRuleType
+  /// Percent (0–100) for PERCENT_OF_PROFIT; flat amount for FIXED_AMOUNT;
+  /// balance threshold for BALANCE_ABOVE_THRESHOLD.
+  value             Decimal
+  frequency         WithdrawalFrequency
+  baseline          WithdrawalBaseline
+  isActive          Boolean             @default(true)
+  /// Last time this rule fired a withdrawal. Used by isWithdrawalDue to
+  /// decide whether the rule is "due" again per its frequency.
+  lastTriggeredAt   DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tradingAccount TradingAccount @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([tradingAccountId])
+  @@index([userId, frequency])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 21 — DailyScore: one row per user per calendar day (in the user's
+// timezone). Computed by `computeDailyScoreAction` on demand + by the daily
+// cron at /api/cron/discipline-scores (recomputes yesterday for every user).
+//
+// The score is 0–100 with weights from DISCIPLINE_WEIGHTS in
+// `/src/lib/behavior/discipline.ts`:
+//   30 — stayed within risk-per-trade limit on every trade
+//   25 — no daily loss or trade-count breach
+//   15 — no overrides of lockouts or warnings
+//   15 — followedPlan true on all trades
+//   10 — no TILT events
+//    5 — pre-trade checklist completed and balance check done
+//
+// `isRestDay` = true when the day had 0 trades AND 0 breaches of any kind.
+// Rest days are "neutral" in the streak logic — they keep the streak
+// continuing without incrementing it.
+//
+// `date` is a "YYYY-MM-DD" string in the user's timezone — no TZ ambiguity
+// (using a DateTime would force UTC midnight which doesn't match a trader's
+// wall-clock day). The `@@unique([userId, date])` constraint enforces one
+// row per user per day.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model DailyScore {
+  id          String   @id @default(cuid())
+  userId      String
+  /// "YYYY-MM-DD" in the user's timezone.
+  date        String
+  /// 0–100 composite discipline score.
+  score       Decimal
+  /// Breakdown of the score per rule + the deductions (lost points +
+  /// tradeIds responsible) so the UI drawer can explain "what cost you points".
+  breakdown   Json
+  /// True iff the day had 0 trades AND 0 breaches — used by the streak logic
+  /// to keep the streak continuing without incrementing.
+  isRestDay   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 22 — NewsEvent: an economic calendar event (e.g. "US NFP",
+// "ECB Rate Decision", "UK CPI y/y"). Cached in the DB by the
+// `refreshNewsEventsAction` server action, which calls the configured
+// provider (see /src/lib/news/provider.ts) and upserts rows.
+//
+// `currency` is the ISO 4217 code of the affected currency (e.g. "USD",
+// "EUR") — or "*" for events that affect all currencies (e.g. a global
+// risk event). The Add Trade warning joins on this field to find events
+// relevant to the traded pair (e.g. "EUR/USD" → currencies "EUR" + "USD").
+//
+// `impact` is one of "LOW", "MEDIUM", "HIGH". The Add Trade warning only
+// fires for "HIGH"-impact events.
+//
+// `forecast` and `actual` are strings (provider-dependent — e.g. "2.5%",
+// "1.8M", "Hold"). `actual` is null until the event is released.
+//
+// The `@@unique([source, scheduledAt, title])` constraint prevents
+// duplicate events from the same source when the cron refresh runs.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model NewsEvent {
+  id           String   @id @default(cuid())
+  /// ISO 4217 currency code ("USD", "EUR", "GBP", ...) or "*" for global.
+  currency     String
+  title        String
+  impact       String   // "LOW" | "MEDIUM" | "HIGH"
+  scheduledAt  DateTime
+  /// Provider name ("ConsoleProvider" for dev, "ForexFactory" / "Investing" /
+  /// "Custom" for prod).
+  source       String
+  forecast     String?
+  actual       String?
+  url          String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([source, scheduledAt, title])
+  @@index([scheduledAt])
+  @@index([currency, scheduledAt])
+  @@index([impact, scheduledAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 23 — TelegramLink: links a RiskGuard user to a Telegram chat.
+//
+// Link flow:
+//   1. User clicks "Generate link code" in Settings → a one-time code
+//      (e.g. "RG-4F2A-9C1B") is stored on User.telegramLinkCode + expires
+//      in 15 minutes.
+//   2. User sends "/start RG-4F2A-9C1B" to the bot in Telegram.
+//   3. Telegram POSTs the update to /api/telegram/webhook (verified via the
+//      X-Telegram-Bot-Api-Secret-Token header against TELEGRAM_WEBHOOK_SECRET).
+//   4. The webhook handler finds the user by the code, creates this
+//      TelegramLink row (userId + chatId + verifiedAt=now), and clears the
+//      pending code.
+//
+// The @@unique([chatId]) constraint prevents two users from linking the
+// same Telegram chat (the second link attempt is rejected with a clear
+// error). The @@unique([userId]) constraint enforces one chat per user
+// (re-linking replaces the old chat).
+// ──────────────────────────────────────────────────────────────────────────────
+
+model TelegramLink {
+  id         String   @id @default(cuid())
+  userId     String
+  /// Telegram chat ID (string — Telegram IDs can exceed JS safe integer).
+  chatId     String
+  /// When the link was verified (via /start CODE). Null = pending.
+  verifiedAt DateTime @default(now())
+  /// Telegram username (for display in Settings; optional).
+  username   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@unique([chatId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 23 — WeeklyReview: AI-generated (or rule-based fallback) weekly
+// review. One row per user per ISO week.
+//
+// `source` records how the review was generated: "ai" (Anthropic Claude)
+// or "fallback" (Phase 9's rule-based insights — used when the AI API
+// fails or the user hasn't opted in).
+//
+// `metrics` stores the aggregated stats that were sent to the AI (or used
+// by the fallback) so the user can see exactly what data was shared —
+// transparency for the privacy toggle.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model WeeklyReview {
+  id         String   @id @default(cuid())
+  userId     String
+  /// ISO week start (Monday 00:00 UTC of that week).
+  weekStart  DateTime
+  /// ISO week end (Sunday 23:59:59 UTC of that week).
+  weekEnd    DateTime
+  /// Plain-language review (AI-generated or rule-based fallback).
+  summary    String
+  /// 3 specific, actionable suggestions (JSON array of strings).
+  suggestions Json
+  /// "ai" or "fallback" — how this review was generated.
+  source     String   @default("fallback")
+  /// The aggregated stats that were sent to the AI (or used by the
+  /// fallback) — transparency for the privacy toggle.
+  metrics    Json
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@index([userId, weekStart])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 24 — Billing enums.
+//
+// The user spec says FREE + PRO (not ELITE). PART2_NOTES suggested ELITE —
+// we follow the user spec's two-tier model. ELITE can be added later by
+// extending the enum + the plans config without breaking existing data.
+// ──────────────────────────────────────────────────────────────────────────────
+
+enum SubscriptionPlan {
+  FREE
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentProvider {
+  PAYSTACK
+  STRIPE
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 24 — Subscription: the user's billing state. One row per user
+// (enforced by @@unique([userId])). Created automatically on signup as a
+// FREE plan.
+//
+// Lifecycle:
+//   signup      → FREE / ACTIVE
+//   checkout    → FREE / ACTIVE  →  PRO / ACTIVE (after webhook confirms)
+//   cancel      → PRO / CANCELLED (cancelAtPeriodEnd=true, currentPeriodEnd
+//                 stays — the user keeps access until the period ends)
+//   resume      → PRO / CANCELLED  →  PRO / ACTIVE (cancelAtPeriodEnd=false)
+//   payment fail → PRO / PAST_DUE (3-day grace period, then EXPIRED → FREE)
+//   expire      → PRO / EXPIRED  →  FREE / ACTIVE (the row is updated in
+//                 place; the user keeps READ access to their data per the
+//                 spec — "never delete data because of a plan change")
+// ──────────────────────────────────────────────────────────────────────────────
+
+model Subscription {
+  id                      String             @id @default(cuid())
+  userId                  String
+  plan                    SubscriptionPlan   @default(FREE)
+  status                  SubscriptionStatus @default(ACTIVE)
+  paymentProvider         PaymentProvider?
+  providerCustomerId      String?
+  providerSubscriptionId  String?
+  currentPeriodStart      DateTime?
+  currentPeriodEnd       DateTime?
+  /// True when the user cancelled but still has access until currentPeriodEnd.
+  /// Webhook sets this to true on cancellation, false on resume.
+  cancelAtPeriodEnd      Boolean            @default(false)
+  /// Phase 24: when the grace period ends (3 days after a failed payment).
+  /// Set by the webhook on payment failure; checked by the daily cron
+  /// /api/cron/billing-grace. Null when no grace period is active.
+  gracePeriodEndsAt      DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user User @relation("UserSubscription", fields: [userId], references: [id])
+
+  @@unique([userId])
+  @@index([userId, status])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 24 — Payment: a single payment record (invoice). One row per
+// successful or failed payment. Used for the billing history table +
+// the invoice links on the Billing page.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model Payment {
+  id                String           @id @default(cuid())
+  userId            String
+  amount            Decimal
+  currency          String           @default("NGN")
+  provider          PaymentProvider
+  providerPaymentId String?
+  /// "PENDING" | "SUCCESS" | "FAILED"
+  status            String           @default("PENDING")
+  invoiceUrl        String?
+  createdAt         DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([provider, providerPaymentId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 24 — ProcessedEvent: webhook idempotency. Stores the provider +
+// event ID of every processed webhook event so duplicates don't
+// double-apply (e.g. Paystack retrying a charge.success event).
+//
+// The webhook handler checks this table BEFORE processing — if the event
+// ID exists, it returns 200 immediately without re-applying the action.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model ProcessedEvent {
+  id          String   @id @default(cuid())
+  provider    PaymentProvider
+  /// Unique event ID from the provider (Paystack reference or Stripe event ID).
+  eventId     String
+  eventType   String?
+  processedAt DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@index([provider, processedAt])
+}
+

@@ -1,0 +1,59 @@
+# ─── Self-hosting docker-compose ────────────────────────────────────────────
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in real values.
+#   2. docker compose up -d
+#   3. The app runs Prisma migrations automatically on startup.
+#   4. Open http://localhost:3000
+#
+# For production:
+#   - Set a strong NEXTAUTH_SECRET (openssl rand -base64 32).
+#   - Set GOOGLE_CLIENT_ID/SECRET if you want Google OAuth.
+#   - Set RESEND_API_KEY + EMAIL_FROM for transactional email.
+#   - Set UPSTASH_REDIS_* for rate limiting.
+#   - Set CRON_SECRET to protect the /api/cron/expire-lockouts endpoint.
+#   - Point a reverse proxy (Caddy/Nginx) at port 3000 for HTTPS.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: riskguard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-riskguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riskguard_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-riskguard}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-riskguard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: riskguard-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-riskguard}:${POSTGRES_PASSWORD:-riskguard_dev_password}@postgres:5432/${POSTGRES_DB:-riskguard}?schema=public"
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-"RiskGuard <onboarding@resend.dev>"}
+      UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL:-}
+      UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN:-}
+      CRON_SECRET: ${CRON_SECRET:-}
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+    driver: local

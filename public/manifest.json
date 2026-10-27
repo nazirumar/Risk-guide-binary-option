@@ -1,0 +1,21 @@
+{
+  "name": "RiskGuard — Money Management for Binary Options Traders",
+  "short_name": "RiskGuard",
+  "description": "Discipline-first money & risk management app for binary options traders.",
+  "start_url": "/app/dashboard",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "productivity"],
+  "lang": "en",
+  "dir": "ltr"
+}

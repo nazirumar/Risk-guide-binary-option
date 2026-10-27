@@ -1,0 +1,21 @@
+node_modules
+.next
+out
+build
+coverage
+playwright-report
+test-results
+bun.lock
+package-lock.json
+yarn.lock
+*.log
+dev.log
+server.log
+prisma/migrations
+db/*.db
+db/*.db-journal
+skills
+.z-ai-config
+
+# Vendored shadcn/ui components — ship with their own consistent style.
+src/components/ui/**
