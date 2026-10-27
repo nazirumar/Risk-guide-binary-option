@@ -213,7 +213,7 @@ export const createTradeSchema = z.object({
   emotion: tradeEmotionSchema.optional().nullable(),
   followedPlan: z.boolean().default(true),
   setupNotes: z.string().max(2000, "Notes too long").optional().nullable(),
-  screenshotUrl: z.string().max(500).optional().nullable(),
+  screenshotUrl: z.string().max(10_000_000).optional().nullable(),
   tags: z.array(z.string().max(50)).max(20, "Max 20 tags").default([]),
   // ── Phase 17: pre-trade confirmation ──
   /** HMAC-signed token from prepareTradeConfirmationAction. Required by
