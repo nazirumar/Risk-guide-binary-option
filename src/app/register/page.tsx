@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { GoogleSignInButton, OrDivider } from "@/components/auth/GoogleSignInButton";
@@ -27,10 +28,12 @@ export default function RegisterPage() {
       }
     >
       {googleEnabled && (
-        <>
-          <GoogleSignInButton callbackUrl="/app/dashboard" label="Sign up with Google" />
-          <OrDivider />
-        </>
+        <Suspense fallback={null}>
+          <>
+            <GoogleSignInButton callbackUrl="/app/dashboard" label="Sign up with Google" />
+            <OrDivider />
+          </>
+        </Suspense>
       )}
       <RegisterForm />
     </AuthShell>
