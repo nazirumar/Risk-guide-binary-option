@@ -96,7 +96,37 @@ export class ConsoleNewsProvider implements NewsProvider {
   }
 }
 
-// ─── Factory ──────────────────────────────────────────────────────────────────
+// ─── Finnhub provider ────────────────────────────────────────────────────────
+export class FinnhubNewsProvider implements NewsProvider {
+  readonly name = "Finnhub";
+  private readonly apiKey: string;
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+  async fetchEvents(opts: FetchEventsOptions): Promise<NewsEventInput[]> {
+    try {
+      const from = opts.fromUtc.toISOString().slice(0, 10);
+      const to = opts.toUtc.toISOString().slice(0, 10);
+      const res = await fetch(
+        `https://finnhub.io/api/v1/calendar/economic?from=${from}&to=${to}&token=${this.apiKey}`,
+      );
+      if (!res.ok) throw new Error(`Finnhub ${res.status}`);
+      const data = (await res.json()) as { economicCalendar?: Array<Record<string, unknown>> };
+      const events = data.economicCalendar ?? [];
+      return events.slice(0, 500).map((e) => ({
+        currency: String(e.currency ?? "*"),
+        title: String(e.event ?? "Event"),
+        impact: (String(e.impact ?? "LOW").toUpperCase() as NewsImpact) || "LOW",
+        scheduledAt: new Date(String(e.time ?? new Date().toISOString())),
+        forecast: e.estimate != null ? String(e.estimate) : null,
+        actual: e.actual != null ? String(e.actual) : null,
+        url: null,
+      }));
+    } catch (e) {
+      throw new Error(`Finnhub fetch failed: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+}
 
 let _provider: NewsProvider | null = null;
 
@@ -114,7 +144,15 @@ export function getNewsProvider(): NewsProvider {
   if (_provider) return _provider;
   const name = process.env.NEWS_PROVIDER?.toLowerCase();
   switch (name) {
-    case "forexfactory":
+    case "finnhub": {
+      const key = process.env.FINNHUB_API_KEY;
+      if (key) {
+        _provider = new FinnhubNewsProvider(key);
+      } else {
+        _provider = new ConsoleNewsProvider();
+      }
+      break;
+    }
       // TODO Phase 22+: implement ForexFactoryProvider when an API key
       // is available. For now, fall back to Console.
       _provider = new ConsoleNewsProvider();
