@@ -127,7 +127,7 @@ export class RealTelegramProvider implements TelegramProvider {
     if (!this.webhookSecret) return true;
     return timingSafeCompare(headerValue, this.webhookSecret);
   }
-} ──────────────────────────────────────────────────
+}
 
 /**
  * Timing-safe string comparison. Hashes both strings to a fixed length
