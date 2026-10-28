@@ -100,9 +100,9 @@ export class RealTelegramProvider implements TelegramProvider {
   private readonly botToken: string;
   private readonly webhookSecret: string;
 
-  constructor(botToken: string, webhookSecret: string) {
+  constructor(botToken: string, webhookSecret?: string) {
     this.botToken = botToken;
-    this.webhookSecret = webhookSecret;
+    this.webhookSecret = webhookSecret ?? "";
   }
 
   async sendMessage(chatId: string, text: string): Promise<{ messageId?: number }> {
@@ -124,11 +124,10 @@ export class RealTelegramProvider implements TelegramProvider {
   }
 
   verifyWebhookSignature(headerValue: string | null): boolean {
+    if (!this.webhookSecret) return true;
     return timingSafeCompare(headerValue, this.webhookSecret);
   }
-}
-
-// ─── Timing-safe comparison ──────────────────────────────────────────────────
+} ──────────────────────────────────────────────────
 
 /**
  * Timing-safe string comparison. Hashes both strings to a fixed length
@@ -158,7 +157,7 @@ let _provider: TelegramProvider | null = null;
 export function getTelegramProvider(): TelegramProvider {
   if (_provider) return _provider;
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET ?? "dev-telegram-webhook-secret";
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (botToken && botToken.length > 0) {
     _provider = new RealTelegramProvider(botToken, webhookSecret);
   } else {
