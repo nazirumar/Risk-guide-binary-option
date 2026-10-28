@@ -498,6 +498,13 @@ model Trade {
   screenshotUrl     String?
   tags              Json           @default("[]")
 
+  // Phase 29 — market condition snapshot at trade time
+  marketRating          String?
+  marketScore           Int?
+  volatilityPercentile  Float?
+  marketSession         String?
+  marketDataMissing     Boolean    @default(false)
+
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
