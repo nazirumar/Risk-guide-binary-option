@@ -1,0 +1,13 @@
+{
+  "name": "riskguard-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/index.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.11.1"
+  }
+}

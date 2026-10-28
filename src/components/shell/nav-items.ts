@@ -16,6 +16,7 @@ import {
   Clock,
   Newspaper,
   CreditCard,
+  Grid3x3,
 } from "lucide-react";
 
 /**
@@ -58,6 +59,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Strategies", href: "/app/strategies", icon: PieChart },
   { label: "Discipline", href: "/app/discipline", icon: Trophy },
   { label: "Sessions", href: "/app/sessions", icon: Clock },
+  { label: "Heatmap", href: "/app/market/heatmap", icon: Grid3x3 },
   { label: "News", href: "/app/news", icon: Newspaper },
   { label: "Goals", href: "/app/goals", icon: Target },
   { label: "Reports", href: "/app/reports", icon: FileText },

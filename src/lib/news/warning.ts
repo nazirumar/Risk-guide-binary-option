@@ -53,9 +53,10 @@ export function getCurrenciesFromAsset(asset: string): string[] {
   const trimmed = asset.trim().toUpperCase();
   if (!trimmed) return ["*"];
 
-  // Slash-separated form: "EUR/USD"
-  if (trimmed.includes("/")) {
-    const [a, b] = trimmed.split("/").map((s) => s.trim());
+  // Slash- or underscore-separated form: "EUR/USD", "EUR_USD" (the DB stores
+  // the Oanda-style underscore form). Normalize the separator, then split.
+  if (trimmed.includes("/") || trimmed.includes("_")) {
+    const [a, b] = trimmed.split(/[/\_]/).map((s) => s.trim());
     if (isIso4217Currency(a) && isIso4217Currency(b)) {
       return [a, b];
     }

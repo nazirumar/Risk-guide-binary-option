@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
+import { requireUser } from "@/server/lib/require-user";
 
 export async function GET() {
-  const instruments = await prisma.instrument.findMany({ where: { isActive: true } });
-  return NextResponse.json({ instruments });
+  try {
+    await requireUser();
+    const instruments = await db.instrument.findMany({ where: { isActive: true } });
+    return NextResponse.json({ instruments });
+  } catch (e) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 }
