@@ -1075,3 +1075,45 @@ model ProcessedEvent {
   @@index([provider, processedAt])
 }
 
+
+model Instrument {
+  id        String   @id @default(cuid())
+  symbol    String   @unique
+  base      String
+  quote     String
+  pipSize   Float
+  isActive  Boolean  @default(true)
+  isMajor   Boolean  @default(false)
+  candles   Candle[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Candle {
+  id           String      @id @default(cuid())
+  instrumentId String
+  instrument   Instrument  @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  granularity  String
+  time         DateTime
+  open         Float
+  high         Float
+  low          Float
+  close        Float
+  volume       Float?
+  bid          Float?
+  ask          Float?
+  createdAt    DateTime    @default(now())
+
+  @@unique([instrumentId, granularity, time])
+  @@index([instrumentId, granularity, time(sort: Desc)])
+}
+
+model MarketDataStatus {
+  id            String   @id @default(cuid())
+  provider      String
+  lastSuccessAt DateTime?
+  lastErrorAt   DateTime?
+  lastError     String?
+  requestsToday Int      @default(0)
+  updatedAt     DateTime @updatedAt
+}

@@ -1181,3 +1181,10 @@ TradingAccount.userId`). Phase 13 will add a CI check that statically scans
 - **Pre-existing test fixes**: `tests/e2e/auth-flow.spec.ts` line 81 (added `timeout: 30_000` to the URL expect — cold dev server can take >5s to compile the credentials authorize path on the first login). Also replaced `getByText("Trading accounts")` (text doesn't exist on the dashboard anymore — pre-existing breakage from before Phase 25) with `getByRole("link", { name: "Trades" })` (sidebar nav is always present after sign-in).
 - **Playwright e2e OAuth mocking**: real Google OAuth can't run in the sandbox (no real client creds, no real Google account). The spec said "mock the Google OAuth provider (or use a test provider)." Implementation: we mock the OUTCOME of the OAuth flow by inserting the User + Account rows directly via prisma (the same rows the signIn callback + adapter would have created), then exercise the post-sign-in flows through the real UI. This covers: first-time Google user → onboarding gate, returning Google user, linking to existing password account, Disconnect blocked for Google-only users, Sign out, Sign out of all devices, Disconnect with re-auth, Set password flow.
 - **All phases complete**: Phase 0–14 (Part 1) + Phase 16–25 (Part 2) — the entire RiskGuard project is now feature-complete with full Google OAuth support. **885 tests across 35 files**. Production build succeeds with all routes. The app is ready for deployment with Google OAuth enabled (just set AUTH_GOOGLE_ID + AUTH_GOOGLE_SECRET in the environment).
+
+[ ] 26 Market data layer
+[ ] 27 Condition scoring & heatmap
+[ ] 28 Live market conditions dashboard
+[ ] 29 Personal edge & trade warnings
+
+We are on PHASE 26: Market Data Layer.
