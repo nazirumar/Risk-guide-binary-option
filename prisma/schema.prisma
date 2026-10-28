@@ -1086,6 +1086,7 @@ model Instrument {
   isMajor   Boolean  @default(false)
   candles   Candle[]
   hourlyStats HourlyVolatilityStat[]
+  marketCondition MarketCondition?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -1133,4 +1134,16 @@ model HourlyVolatilityStat {
   updatedAt       DateTime   @updatedAt
 
   @@unique([instrumentId, weekday, hourUtc])
+}
+
+model MarketCondition {
+  id            String     @id @default(cuid())
+  instrumentId  String     @unique
+  instrument    Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  score         Int
+  rating        String
+  factors       Json
+  reasons       Json
+  computedAt    DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 }
