@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { db } from "@/lib/db";
 import { getMarketProvider } from "@/lib/market/provider";
 import { isMarketClosed } from "@/lib/market/market-hours";
 import {
@@ -14,8 +14,6 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-const prisma = new PrismaClient();
 
 type CacheEntry = { at: number; data: any };
 const cache = new Map<string, CacheEntry>();
@@ -40,7 +38,7 @@ export async function GET() {
     let newsRows: any = null;
     try {
       const since = new Date(now.getTime() - 60 * 60 * 1000);
-      newsRows = await prisma.newsEvent.findMany({
+      newsRows = await db.newsEvent.findMany({
         where: { scheduledAt: { gte: since } },
         orderBy: { scheduledAt: "asc" },
         select: { currency: true, title: true, impact: true, scheduledAt: true },
@@ -49,7 +47,7 @@ export async function GET() {
       newsRows = null;
     }
 
-    const instruments = await prisma.instrument.findMany({
+    const instruments = await db.instrument.findMany({
       where: { isActive: true },
       include: { hourlyStats: { select: { sampleDays: true } } },
     });
@@ -59,7 +57,7 @@ export async function GET() {
     for (const inst of instruments) {
       try {
         const from = new Date(now.getTime() - CONDITION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
-        let candleRows = await prisma.candle.findMany({
+        let candleRows = await db.candle.findMany({
           where: { instrumentId: inst.id, granularity: CONDITION_GRANULARITY, time: { gte: from } },
           orderBy: { time: "asc" },
           take: MAX_CONDITION_CANDLES,
