@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/market-sync",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/market-conditions",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/market-hourly-vol",
+      "schedule": "0 */6 * * *"
+    }
+  ]
+}
