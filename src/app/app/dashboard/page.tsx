@@ -7,6 +7,7 @@ import { BalanceCheckPromptBanner } from "@/components/balance-sync/BalanceCheck
 import { BigWinDayPromptBanner } from "@/components/withdrawal/BigWinDayPromptBanner";
 import { BankedVsAtRiskCard } from "@/components/withdrawal/BankedVsAtRiskCard";
 import { DisciplineScoreCard } from "@/components/discipline/DisciplineScoreCard";
+import { MarketNowWidget } from "@/components/market/MarketNowWidget";
 import { requireUser } from "@/server/lib/require-user";
 import { getActiveAccount, listUserAccounts } from "@/server/actions/active-account";
 import { getDashboardStats } from "@/server/lib/analytics";
@@ -194,6 +195,9 @@ export default async function DashboardPage() {
 
       {/* Phase 21 — Daily discipline score + streak (links to /app/discipline) */}
       <DisciplineScoreCard />
+
+      {/* Phase 28 — "Market now" widget: top 3 pairs + next high-impact news */}
+      <MarketNowWidget />
 
       {/* Risk meter */}
       {riskProfile && (

@@ -280,6 +280,7 @@ model User {
   telegramLink   TelegramLink?
   weeklyReviews  WeeklyReview[]
   payments       Payment[]
+  marketFavorites MarketFavorite[]
 }
 
 // Auth.js adapter models — see https://authjs.dev/adapters/prisma
@@ -1094,6 +1095,7 @@ model Instrument {
   candles   Candle[]
   hourlyStats HourlyVolatilityStat[]
   marketCondition MarketCondition?
+  marketFavorites MarketFavorite[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -1151,6 +1153,38 @@ model MarketCondition {
   rating        String
   factors       Json
   reasons       Json
+  /// Phase 28: display metadata snapshot — { session, currentSpread,
+  /// typicalSpread, spreadRatio, volatilityPercentile, marketClosed,
+  /// dataFreshnessSeconds, nextNewsTitle, nextNewsMinutesTo }. Stored so the
+  /// dashboard cards + SSE stream can read it without re-deriving from candles
+  /// (which would cost a per-client candle scan). Null on rows written before
+  /// Phase 28.
+  meta          Json?
   computedAt    DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 28 — Live market conditions dashboard.
+//
+// MarketFavorite is server-side (not localStorage) because the worker needs to
+// read it: it dispatches "your favorite pair flipped to GOOD/AVOID" alerts.
+// `lastAlertAt` enforces the one-alert-per-pair-per-30-minutes rate limit.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model MarketFavorite {
+  id           String     @id @default(cuid())
+  userId       String
+  instrumentId String
+  /// Phase 28: when the user was last notified about this pair's rating change.
+  /// Null until the first alert. Enforces the 30-minute cooldown.
+  lastAlertAt  DateTime?
+  createdAt    DateTime   @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instrument Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, instrumentId])
+  @@index([userId])
+  @@index([instrumentId])
 }

@@ -24,6 +24,9 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   TILT_WARNING: { inApp: true, email: false, telegram: true },
   DAILY_SUMMARY: { inApp: false, email: false, telegram: true },
   AI_WEEKLY_REVIEW: { inApp: true, email: false, telegram: false },
+  // Phase 28 — Live market conditions. OFF by default (spec: "optional alerts …
+  // off by default"); the worker only notifies users who opt in AND favor a pair.
+  MARKET_CONDITION_CHANGED: { inApp: false, email: false, telegram: false },
 };
 
 /**

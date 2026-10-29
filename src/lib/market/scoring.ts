@@ -399,6 +399,10 @@ export type ConditionFactor = {
   weight: number;
   /** Plain-language note surfaced to the trader. */
   note: string;
+  /** Phase 28: raw volatility percentile (0-100) — only on the volatility
+   *  factor, for the dashboard card's percentile bar. Null elsewhere / when
+   *  history is insufficient. */
+  percentile?: number | null;
 };
 
 export type ConditionScore = {
@@ -518,6 +522,7 @@ export function conditionScore(ctx: ConditionContext): ConditionScore {
     score: volatilityScore,
     weight: CONDITION_WEIGHTS.volatility,
     note: volatilityNote,
+    percentile: vol.percentile,
   });
 
   // ── Trend / choppiness factor ────────────────────────────────────────────
