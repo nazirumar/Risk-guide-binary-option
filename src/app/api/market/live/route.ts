@@ -64,19 +64,44 @@ export async function GET() {
           select: { time: true, open: true, high: true, low: true, close: true, volume: true, bid: true, ask: true },
         });
 
+        let lastSuccessAt: Date | null = null;
+
         if (candleRows.length < 50) {
           try {
             const candles = await provider.getCandles(inst.symbol, CONDITION_GRANULARITY, from, now);
-            candleRows = candles.map((c) => ({
-              time: c.time,
-              open: c.open,
-              high: c.high,
-              low: c.low,
-              close: c.close,
-              volume: c.volume ?? 0,
-              bid: c.bid,
-              ask: c.ask,
-            }));
+            if (candles.length > 0) {
+              candleRows = candles.map((c) => ({
+                time: c.time,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume ?? 0,
+                bid: c.bid,
+                ask: c.ask,
+              }));
+              lastSuccessAt = new Date();
+            }
+          } catch {}
+        }
+
+        const newest = candleRows.length > 0 ? candleRows[candleRows.length - 1].time : null;
+        if (!newest || now.getTime() - newest.getTime() > 180000) {
+          try {
+            const candles = await provider.getCandles(inst.symbol, CONDITION_GRANULARITY, new Date(now.getTime() - 2 * 60 * 60 * 1000), now);
+            if (candles.length > 0) {
+              candleRows = candles.map((c) => ({
+                time: c.time,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume ?? 0,
+                bid: c.bid,
+                ask: c.ask,
+              }));
+              lastSuccessAt = new Date();
+            }
           } catch {}
         }
 
@@ -85,27 +110,30 @@ export async function GET() {
           if (!hasSpread) {
             const p: any = provider as any;
             if (typeof p.getQuote === "function") {
-              const q = await p.getQuote(inst.symbol);
-              if (q?.bid != null && q?.ask != null) {
-                if (candleRows.length > 0) {
-                  const last: any = candleRows[candleRows.length - 1];
-                  last.bid = q.bid;
-                  last.ask = q.ask;
-                } else {
-                  const t = now;
-                  const mid = (Number(q.bid) + Number(q.ask)) / 2;
-                  candleRows.push({
-                    time: t,
-                    open: mid,
-                    high: mid,
-                    low: mid,
-                    close: mid,
-                    volume: 0,
-                    bid: q.bid,
-                    ask: q.ask,
-                  } as any);
+              try {
+                const q = await p.getQuote(inst.symbol);
+                if (q?.bid != null && q?.ask != null) {
+                  if (candleRows.length > 0) {
+                    const last: any = candleRows[candleRows.length - 1];
+                    last.bid = q.bid;
+                    last.ask = q.ask;
+                  } else {
+                    const t = now;
+                    const mid = (Number(q.bid) + Number(q.ask)) / 2;
+                    candleRows.push({
+                      time: t,
+                      open: mid,
+                      high: mid,
+                      low: mid,
+                      close: mid,
+                      volume: 0,
+                      bid: q.bid,
+                      ask: q.ask,
+                    } as any);
+                  }
+                  lastSuccessAt = new Date();
                 }
-              }
+              } catch {}
             }
           }
         } catch {}
@@ -114,7 +142,7 @@ export async function GET() {
           pair: inst.symbol,
           now,
           candleRows,
-          lastSuccessAt: null,
+          lastSuccessAt,
           newsRows,
           marketClosed,
         });
