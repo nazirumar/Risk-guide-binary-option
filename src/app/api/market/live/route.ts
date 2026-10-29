@@ -80,6 +80,36 @@ export async function GET() {
           } catch {}
         }
 
+        try {
+          const hasSpread = candleRows.some((c: any) => c.bid != null && c.ask != null);
+          if (!hasSpread) {
+            const p: any = provider as any;
+            if (typeof p.getQuote === "function") {
+              const q = await p.getQuote(inst.symbol);
+              if (q?.bid != null && q?.ask != null) {
+                if (candleRows.length > 0) {
+                  const last: any = candleRows[candleRows.length - 1];
+                  last.bid = q.bid;
+                  last.ask = q.ask;
+                } else {
+                  const t = now;
+                  const mid = (Number(q.bid) + Number(q.ask)) / 2;
+                  candleRows.push({
+                    time: t,
+                    open: mid,
+                    high: mid,
+                    low: mid,
+                    close: mid,
+                    volume: 0,
+                    bid: q.bid,
+                    ask: q.ask,
+                  } as any);
+                }
+              }
+            }
+          }
+        } catch {}
+
         const ctx = buildConditionContext({
           pair: inst.symbol,
           now,
