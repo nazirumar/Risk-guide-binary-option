@@ -11,7 +11,7 @@
  * - Click a card → factor-breakdown drawer with a mini M5 chart.
  * - Outage banner + greyed ratings when the provider/worker is stale.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Star } from "lucide-react";
 
@@ -19,7 +19,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PairDetailDrawer } from "@/components/market/PairDetailDrawer";
 import { RatingBadge, ScoreBar } from "@/components/market/RatingBadge";
 import { toggleFavoriteAction } from "@/server/actions/market-favorites";
-import { useMarketStream } from "@/hooks/use-market-stream";
 import type { MarketSnapshot, MarketSnapshotPair } from "@/server/lib/market-snapshot";
 
 const DISCLAIMER =
@@ -38,13 +37,35 @@ export function MarketDashboard({
   initial: MarketSnapshot;
   initialFavorites: string[];
 }) {
-  const { snapshot, status } = useMarketStream(initial);
+  const [snapshot, setSnapshot] = useState<MarketSnapshot>(initial);
+  const [status, setStatus] = useState<"connecting" | "live" | "polling" | "error">("polling");
   const [goodOnly, setGoodOnly] = useState(false);
   const [hideClosed, setHideClosed] = useState(false);
   const [favOnly, setFavOnly] = useState(false);
   const [favorites, setFavorites] = useState<string[]>(initialFavorites);
   const [selected, setSelected] = useState<MarketSnapshotPair | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchLive = async () => {
+      try {
+        const res = await fetch("/api/market/live", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (mounted) {
+          setSnapshot(data);
+          setStatus("polling");
+        }
+      } catch {}
+    };
+    fetchLive();
+    const id = setInterval(fetchLive, 30_000);
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
+  }, []);
 
   const stale = snapshot?.isStale ?? true;
 

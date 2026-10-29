@@ -1,0 +1,149 @@
+import { NextResponse } from "next/server";
+import { PrismaClient } from "@prisma/client";
+import { getMarketProvider } from "@/lib/market/provider";
+import { isMarketClosed } from "@/lib/market/market-hours";
+import {
+  buildConditionContext,
+  computeConditionMeta,
+  conditionScore,
+  CONDITION_GRANULARITY,
+  CONDITION_LOOKBACK_DAYS,
+  MAX_CONDITION_CANDLES,
+} from "@/lib/market/condition-input";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
+const prisma = new PrismaClient();
+
+type CacheEntry = { at: number; data: any };
+const cache = new Map<string, CacheEntry>();
+const TTL_MS = 30_000;
+
+export async function GET() {
+  const key = "market-live-v1";
+  const now = new Date();
+  const cached = cache.get(key);
+  if (cached && now.getTime() - cached.at < TTL_MS) {
+    return NextResponse.json(cached.data, {
+      headers: {
+        "Cache-Control": "s-maxage=30, stale-while-revalidate=60",
+      },
+    });
+  }
+
+  try {
+    const provider = getMarketProvider();
+    const marketClosed = isMarketClosed(now);
+
+    let newsRows: any = null;
+    try {
+      const since = new Date(now.getTime() - 60 * 60 * 1000);
+      newsRows = await prisma.newsEvent.findMany({
+        where: { scheduledAt: { gte: since } },
+        orderBy: { scheduledAt: "asc" },
+        select: { currency: true, title: true, impact: true, scheduledAt: true },
+      });
+    } catch {
+      newsRows = null;
+    }
+
+    const instruments = await prisma.instrument.findMany({
+      where: { isActive: true },
+      include: { hourlyStats: { select: { sampleDays: true } } },
+    });
+
+    const pairs: any[] = [];
+
+    for (const inst of instruments) {
+      try {
+        const from = new Date(now.getTime() - CONDITION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+        let candleRows = await prisma.candle.findMany({
+          where: { instrumentId: inst.id, granularity: CONDITION_GRANULARITY, time: { gte: from } },
+          orderBy: { time: "asc" },
+          take: MAX_CONDITION_CANDLES,
+          select: { time: true, open: true, high: true, low: true, close: true, volume: true, bid: true, ask: true },
+        });
+
+        if (candleRows.length < 50) {
+          try {
+            const candles = await provider.getCandles(inst.symbol, CONDITION_GRANULARITY, from, now);
+            candleRows = candles.map((c) => ({
+              time: c.time,
+              open: c.open,
+              high: c.high,
+              low: c.low,
+              close: c.close,
+              volume: c.volume ?? 0,
+              bid: c.bid,
+              ask: c.ask,
+            }));
+          } catch {}
+        }
+
+        const ctx = buildConditionContext({
+          pair: inst.symbol,
+          now,
+          candleRows,
+          lastSuccessAt: null,
+          newsRows,
+          marketClosed,
+        });
+        const result = conditionScore(ctx);
+        const meta = computeConditionMeta(ctx, result.factors);
+
+        const rating = result.rating === "GOOD" || result.rating === "AVOID" ? result.rating : "CAUTION";
+        const maxSampleDays = inst.hourlyStats.reduce((m: number, s: any) => Math.max(m, s.sampleDays), 0);
+
+        pairs.push({
+          instrumentId: inst.id,
+          symbol: inst.symbol,
+          displayName: inst.symbol.replace("_", "/"),
+          score: result.score,
+          rating,
+          factors: result.factors,
+          reasons: result.reasons,
+          computedAt: now.toISOString(),
+          ageSeconds: 0,
+          session: (meta as any)?.session ?? null,
+          spread: (meta as any)?.currentSpread ?? null,
+          typicalSpread: (meta as any)?.typicalSpread ?? null,
+          spreadRatio: (meta as any)?.spreadRatio ?? null,
+          volatilityPercentile: (meta as any)?.volatilityPercentile ?? null,
+          marketClosed,
+          nextNewsTitle: (meta as any)?.nextNewsTitle ?? null,
+          nextNewsMinutesTo: (meta as any)?.nextNewsMinutesTo ?? null,
+          newsKnown: (meta as any)?.newsKnown ?? false,
+          heatmapReady: maxSampleDays >= 10,
+        });
+      } catch {}
+    }
+
+    pairs.sort((a, b) => b.score - a.score);
+
+    const data = {
+      serverTime: now.toISOString(),
+      isStale: pairs.length === 0,
+      dataAgeSeconds: pairs.length > 0 ? 0 : null,
+      provider: provider.name,
+      providerLagSeconds: 0,
+      providerLastError: null,
+      marketClosed,
+      pairs,
+      nextNews: null,
+    };
+
+    cache.set(key, { at: now.getTime(), data });
+    return NextResponse.json(data, {
+      headers: {
+        "Cache-Control": "s-maxage=30, stale-while-revalidate=60",
+      },
+    });
+  } catch (e: any) {
+    return NextResponse.json(
+      { serverTime: now.toISOString(), isStale: true, dataAgeSeconds: null, provider: null, providerLagSeconds: null, providerLastError: e?.message, marketClosed: false, pairs: [], nextNews: null },
+      { status: 200 }
+    );
+  }
+}
