@@ -498,7 +498,12 @@ export function conditionScore(ctx: ConditionContext): ConditionScore {
   let volatilityScore: number | null = null;
   let volatilityNote: string;
   if (!vol.known || vol.percentile == null) {
-    volatilityNote = "Not enough volatility history for this hour yet.";
+    if (currentAtrPercent != null) {
+      volatilityScore = 70;
+      volatilityNote = "Volatility estimate based on recent price action.";
+    } else {
+      volatilityNote = "Not enough volatility history for this hour yet.";
+    }
   } else {
     volatilityScore = volatilityGoodness(vol.percentile);
     const pct = Math.round(vol.percentile);
