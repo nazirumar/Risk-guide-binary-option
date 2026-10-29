@@ -216,6 +216,121 @@ async function retentionCleanup() {
   console.log("Retention cleanup completed");
 }
 
+function atrPercent(candles: Array<{ high: number; low: number; close: number }>): number {
+  if (candles.length < 2) return 0;
+  let sum = 0;
+  for (let i = 1; i < candles.length; i++) {
+    const c = candles[i];
+    const pc = candles[i - 1].close;
+    const tr = Math.max(c.high - c.low, Math.abs(c.high - pc), Math.abs(c.low - pc));
+    sum += tr;
+  }
+  const atr = sum / (candles.length - 1);
+  const lastClose = candles[candles.length - 1].close;
+  if (lastClose <= 0) return 0;
+  return (atr / lastClose) * 100;
+}
+
+async function computeHourlyVolatilityStats() {
+  console.log("[hourly-vol] starting aggregation...");
+  const instruments = await prisma.instrument.findMany({ where: { isActive: true } });
+  const now = new Date();
+  const lookbackDays = 90;
+  const from = new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+
+  for (const inst of instruments) {
+    try {
+      const candles = await prisma.candle.findMany({
+        where: {
+          instrumentId: inst.id,
+          granularity: "M5",
+          time: { gte: from },
+        },
+        orderBy: { time: "asc" },
+        select: { time: true, high: true, low: true, close: true },
+      });
+
+      if (candles.length < 100) {
+        console.log(`[hourly-vol] ${inst.symbol}: not enough candles (${candles.length})`);
+        continue;
+      }
+
+      type Bucket = { days: Set<string>; values: number[] };
+      const buckets = new Map<string, Bucket>();
+
+      for (let i = 14; i < candles.length; i++) {
+        const c = candles[i];
+        const t = c.time;
+        const weekday = t.getUTCDay();
+        const hour = t.getUTCHours();
+        const key = `${weekday}:${hour}`;
+
+        if (!buckets.has(key)) {
+          buckets.set(key, { days: new Set(), values: [] });
+        }
+        const b = buckets.get(key)!;
+        const window = candles.slice(i - 14, i + 1);
+        const a = atrPercent(window);
+        if (a > 0) {
+          b.values.push(a);
+          b.days.add(t.toISOString().slice(0, 10));
+        }
+      }
+
+      let upserted = 0;
+      for (const [key, b] of buckets.entries()) {
+        const [w, h] = key.split(":");
+        const weekday = parseInt(w);
+        const hourUtc = parseInt(h);
+        const sampleDays = b.days.size;
+
+        if (sampleDays < 10) continue;
+        if (b.values.length === 0) continue;
+
+        const sorted = [...b.values].sort((x, y) => x - y);
+        const avg = sorted.reduce((a, v) => a + v, 0) / sorted.length;
+        const p20 = sorted[Math.floor(sorted.length * 0.2)] ?? avg;
+        const p50 = sorted[Math.floor(sorted.length * 0.5)] ?? avg;
+        const p80 = sorted[Math.floor(sorted.length * 0.8)] ?? avg;
+
+        await prisma.hourlyVolatilityStat.upsert({
+          where: {
+            instrumentId_weekday_hourUtc: {
+              instrumentId: inst.id,
+              weekday,
+              hourUtc,
+            },
+          },
+          update: {
+            avgAtrPercent: avg,
+            p20,
+            p50,
+            p80,
+            sampleDays,
+          },
+          create: {
+            instrumentId: inst.id,
+            weekday,
+            hourUtc,
+            avgAtrPercent: avg,
+            p20,
+            p50,
+            p80,
+            sampleDays,
+          },
+        });
+        upserted++;
+      }
+
+      console.log(`[hourly-vol] ${inst.symbol}: upserted ${upserted} buckets`);
+    } catch (e: any) {
+      console.error(`[hourly-vol] error for ${inst.symbol}:`, e?.message);
+    }
+  }
+
+  console.log("[hourly-vol] done");
+}
+
 /**
  * Phase 28 — Compute the condition score for EVERY watchlist pair and store the
  * latest row in `MarketCondition`. Computed ONCE here and shared by all users
@@ -379,6 +494,8 @@ async function main() {
   }
   await ensureInstruments(provider);
   await backfill(provider);
+  void computeHourlyVolatilityStats();
+  setInterval(() => void computeHourlyVolatilityStats(), 6 * 60 * 60 * 1000);
   setInterval(() => pollUpdates(provider), 60 * 1000); // poll every minute
   setInterval(() => retentionCleanup(), 24 * 60 * 60 * 1000); // daily
   // Phase 28 — score every pair every minute and store one shared row each.
