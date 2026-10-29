@@ -37,6 +37,21 @@
 - [x] 29 — Personal edge & trade warnings (all gates passed; 836/1008 tests green, 172 = known pre-existing FK teardown set)
 - [ ] 30 — (open)
 
+### Revised re-run — 2026-10-29
+
+The market-data phases are being re-run against a **revised Phase 26 spec**
+(no OANDA; Deriv public no-auth WebSocket + Dukascopy backfill + optional
+TwelveData fallback; `BrokerInstrumentMap` mapping). The `[x]` marks above
+record the first pass; the checklist below tracks the revised acceptance.
+
+- [ ] 26 (revised) — Market data layer
+- [ ] 27 (revised) — Condition scoring & heatmap
+- [ ] 28 (revised) — Live market conditions dashboard
+- [ ] 29 (revised) — Personal edge & trade warnings
+
+**Current phase: 26 (revised).** Do not start 27 until 26 passes its
+acceptance checklist.
+
 ## Phase 0 — Acceptance Checklist
 
 | #   | Item                                                                     | Status | Notes                                                           |

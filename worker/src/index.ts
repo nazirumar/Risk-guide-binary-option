@@ -371,6 +371,12 @@ async function dispatchFavoriteAlerts(instrumentId: string, symbol: string, rati
 async function main() {
   const provider = getMarketProvider();
   console.log(`Starting market data worker with provider: ${provider.name}`);
+  // Verify the configured Deriv PAT + app id once at startup (server-side only).
+  // Public candles need no auth, so a bad key is reported but never fatal.
+  if (provider.validateCredentials) {
+    const cred = await provider.validateCredentials();
+    console.log(`Deriv credentials: ${cred.ok ? "OK" : "FAILED"} — ${cred.detail}`);
+  }
   await ensureInstruments(provider);
   await backfill(provider);
   setInterval(() => pollUpdates(provider), 60 * 1000); // poll every minute
