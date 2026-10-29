@@ -55,7 +55,7 @@ export function MarketDashboard({
         const data = await res.json();
         if (mounted) {
           setSnapshot(data);
-          setStatus("polling");
+          setStatus("live");
         }
       } catch {}
     };
@@ -100,7 +100,7 @@ export function MarketDashboard({
           <p className="text-sm text-muted-foreground">
             {snapshot?.marketClosed ? "Market closed" : "Market open"} · {pairs.length} pair
             {pairs.length === 1 ? "" : "s"}
-            {status === "polling" && " · live updates unavailable, refreshing every 30s"}
+            {status === "polling" && " · refreshing every 30s"}
           </p>
         </div>
         <Link
