@@ -38,6 +38,7 @@ import {
   type NotificationPrefs,
 } from "@/server/lib/notification-types";
 import { dayKeyInTz, shiftDayKey } from "@/lib/behavior/discipline";
+import { buildRecommendationMessage } from "@/server/lib/telegram-recommendations";
 
 export type TelegramActionResult = {
   ok: boolean;
@@ -306,11 +307,41 @@ export async function handleTelegramWebhookAction(
           `/start CODE — link your account (code from Settings)\n` +
           `/start — resume paused alerts\n` +
           `/status — balance, today's P/L, risk meter\n` +
+          `/reco — session-based pair recommendations\n` +
           `/stop — pause alerts (account stays linked)\n` +
           `/help — this message\n\n` +
           `<i>RiskGuard is a discipline tool, not financial advice.</i>`,
       );
       return { ok: true, message: "Help sent." };
+    }
+    case "unknown": {
+      const cmd = command.raw.trim().toLowerCase();
+      if (cmd === "/reco" || cmd === "/recommend" || cmd === "/pairs") {
+        const link = await db.telegramLink.findUnique({ where: { chatId } });
+        if (!link) {
+          await provider.sendMessage(
+            chatId,
+            "⚠ This chat isn't linked. Send /start CODE to link it (code from Settings → Telegram).",
+          );
+          return { ok: true, message: "No link for this chat." };
+        }
+        try {
+          const msg = await buildRecommendationMessage();
+          await provider.sendMessage(chatId, msg);
+          return { ok: true, message: "Recommendations sent." };
+        } catch (e) {
+          await provider.sendMessage(
+            chatId,
+            "⚠ Could not fetch recommendations right now. Try again in a moment.",
+          );
+          return { ok: false, message: "Failed to build recommendations." };
+        }
+      }
+      // Unknown command — friendly nudge toward /help.
+      if (command.raw.startsWith("/")) {
+        await provider.sendMessage(chatId, `Unknown command. Send /help to see what I can do.`);
+      }
+      return { ok: true, message: "Unknown command ignored." };
     }
     default: {
       // Unknown command — friendly nudge toward /help.
