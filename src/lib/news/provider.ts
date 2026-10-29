@@ -153,10 +153,6 @@ export function getNewsProvider(): NewsProvider {
       }
       break;
     }
-      // TODO Phase 22+: implement ForexFactoryProvider when an API key
-      // is available. For now, fall back to Console.
-      _provider = new ConsoleNewsProvider();
-      break;
     case "console":
     case undefined:
     case "":
