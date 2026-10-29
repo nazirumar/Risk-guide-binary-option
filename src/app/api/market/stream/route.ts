@@ -20,8 +20,22 @@ import { subscribeToMarketStream } from "@/server/lib/market-stream";
 const HEARTBEAT_MS = 20_000;
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET(req: Request) {
+  // Vercel Serverless cannot hold long-lived SSE connections.
+  // Fall back to polling (use-market-stream.ts already handles this).
+  if (process.env.VERCEL) {
+    try {
+      await requireUser();
+    } catch {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    return NextResponse.json(
+      { error: "sse_disabled_on_serverless", message: "Use snapshot polling" },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   try {
     // Auth BEFORE creating the stream — a throw here is still a normal response.
     await requireUser();
