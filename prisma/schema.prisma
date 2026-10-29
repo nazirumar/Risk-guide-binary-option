@@ -1107,6 +1107,7 @@ model Instrument {
   candles   Candle[]
   hourlyStats HourlyVolatilityStat[]
   marketCondition MarketCondition?
+  brokerMaps BrokerInstrumentMap[]
   marketFavorites MarketFavorite[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1199,4 +1200,18 @@ model MarketFavorite {
   @@unique([userId, instrumentId])
   @@index([userId])
   @@index([instrumentId])
+}
+
+model BrokerInstrumentMap {
+  id           String      @id @default(cuid())
+  broker       String
+  brokerSymbol String
+  instrumentId String?
+  instrument   Instrument? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+  isOtc        Boolean     @default(false)
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([broker, brokerSymbol])
 }
