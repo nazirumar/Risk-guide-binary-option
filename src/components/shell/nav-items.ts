@@ -18,6 +18,7 @@ import {
   CreditCard,
   Grid3x3,
   Activity,
+  Crosshair,
 } from "lucide-react";
 
 /**
@@ -57,6 +58,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   { label: "Stake Calculator", href: "/app/stake-calculator", icon: Calculator },
   { label: "Analytics", href: "/app/analytics", icon: BarChart3 },
+  { label: "Market Edge", href: "/app/analytics/market-edge", icon: Crosshair },
   { label: "Strategies", href: "/app/strategies", icon: PieChart },
   { label: "Discipline", href: "/app/discipline", icon: Trophy },
   { label: "Sessions", href: "/app/sessions", icon: Clock },

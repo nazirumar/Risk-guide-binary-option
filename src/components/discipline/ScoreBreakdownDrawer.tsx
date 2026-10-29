@@ -23,11 +23,13 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { DisciplineRuleBreakdown } from "@/lib/behavior/discipline";
-import { DISCIPLINE_WEIGHTS } from "@/lib/behavior/discipline";
 
-function ruleIcon(rule: DisciplineRuleBreakdown["rule"], earned: number) {
-  const fullEarned = earned === DISCIPLINE_WEIGHTS[rule];
+function ruleIcon(earned: number, total: number) {
+  // Compare against the entry's own total — AVOID_OVERRIDES carries a
+  // per-user weight that can differ from the base constant (Phase 29).
+  const fullEarned = earned === total && total > 0;
   if (fullEarned) return <CheckCircle2 className="size-4 text-profit" aria-hidden="true" />;
+  if (total === 0) return <ShieldX className="size-4 text-muted-foreground" aria-hidden="true" />;
   return <ShieldX className="size-4 text-loss" aria-hidden="true" />;
 }
 
@@ -76,7 +78,7 @@ export function ScoreBreakdownDrawer({
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-sm font-medium">
-                  {ruleIcon(b.rule, b.earned)}
+                  {ruleIcon(b.earned, b.total)}
                   {b.rule
                     .split("_")
                     .map((w) => w[0] + w.slice(1).toLowerCase())

@@ -58,6 +58,37 @@ export type PrepareConfirmationResult = {
     requirePlanCheckbox: boolean;
     reasonMode: "OFF" | "OPTIONAL" | "REQUIRED";
   };
+
+  /** Phase 29: live market rating + the trader's own historical result for
+   *  this pair × session. `hasData:false` (OTC / unknown instrument / stale
+   *  feed) means the dialog shows "No market data" — never a guessed rating. */
+  market?: PrepareMarketInfo;
+};
+
+/** Market-rating + edge block shown on the Phase 17 pre-trade screen. */
+export type PrepareMarketInfo = {
+  hasData: boolean;
+  rating?: "GOOD" | "CAUTION" | "AVOID";
+  score?: number;
+  volatilityPercentile?: number | null;
+  session?: string;
+  /** Descriptive reasons for the current rating (from the condition score). */
+  reasons?: string[];
+  nextNewsTitle?: string | null;
+  nextNewsMinutesTo?: number | null;
+  /** Server decision: does the AVOID confirm dialog apply for this trade?
+   *  (warnings enabled + rating AVOID + not skipped for this account). */
+  avoidConfirmRequired?: boolean;
+  /** The user's own closed trades for this pair × session — only present
+   *  when the group has ≥ 30 trades (otherwise "need more trades" copy). */
+  personal?: {
+    trades: number;
+    winRate: number;
+    winRateLow: number;
+    winRateHigh: number;
+    expectancy: number;
+    reliability: string;
+  } | null;
 };
 
 /** Result of cancelTradeAttemptAction. */

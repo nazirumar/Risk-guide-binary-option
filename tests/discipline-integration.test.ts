@@ -192,8 +192,8 @@ describe("Phase 21 — DailyScore upsert + per-rule deductions", () => {
     });
     const rows = await prisma.dailyScore.findMany({ where: { userId, date: dateKey } });
     expect(rows).toHaveLength(1); // updated, not duplicated
-    expect(rows[0].score.toString()).toBe("70"); // 100 - 30 (NO_OVERRIDES lost) ... wait NO_OVERRIDES is 15 not 30
-    // Actually: lost NO_OVERRIDES (15) + lost FOLLOWED_PLAN (15) = 30 pts lost. 100-30=70.
+    // Lost NO_OVERRIDES (10, Phase 29 weight) + FOLLOWED_PLAN (15) = 25 lost.
+    expect(rows[0].score.toString()).toBe("75");
   });
 
   it("rest-day detection from real DB rows (no trades + no breaches)", async () => {
@@ -221,7 +221,7 @@ describe("Phase 21 — DailyScore upsert + per-rule deductions", () => {
     expect(result.score).toBe(85); // 100 - 15 (FOLLOWED_PLAN lost)
   });
 
-  it("NO_OVERRIDES: lockout override → 15-pt loss", async () => {
+  it("NO_OVERRIDES: lockout override → 10-pt loss", async () => {
     const result = await upsertDailyScoreForTest(userId, dateKey, {
       trades: [{ id: "t1", stake: "10", followedPlan: true }],
       lockoutOverrides: 1,
@@ -230,7 +230,7 @@ describe("Phase 21 — DailyScore upsert + per-rule deductions", () => {
       checklistCompleted: true,
       balanceCheckDone: true,
     });
-    expect(result.score).toBe(85); // 100 - 15 (NO_OVERRIDES lost)
+    expect(result.score).toBe(90); // 100 - 10 (NO_OVERRIDES lost, Phase 29 weight)
   });
 
   it("all rules breached → score=0", async () => {
@@ -240,6 +240,7 @@ describe("Phase 21 — DailyScore upsert + per-rule deductions", () => {
       tradeCountBreached: true,
       lockoutOverrides: 1,
       warningOverrides: 1,
+      avoidOverrides: 1,
       tiltEvents: 1,
       checklistCompleted: false,
       balanceCheckDone: false,
@@ -492,6 +493,7 @@ describe("Phase 21 — streak transition with DB rows", () => {
       trades: [{ id: "t1", stake: "10", followedPlan: false, breachedRiskPerTrade: true }],
       lockoutOverrides: 1,
       warningOverrides: 1,
+      avoidOverrides: 1,
       tiltEvents: 1,
       dailyLossBreached: true,
       tradeCountBreached: true,

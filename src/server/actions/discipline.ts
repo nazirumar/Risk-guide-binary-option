@@ -182,6 +182,8 @@ export async function computeDailyScoreAction(dateStr?: string): Promise<Compute
     tiltEventsCount,
     tradingSessionCount,
     balanceCheckCount,
+    avoidOverrideCount,
+    userAvoidWeight,
   ] = await Promise.all([
     db.trade.findMany({
       where: {
@@ -254,6 +256,19 @@ export async function computeDailyScoreAction(dateStr?: string): Promise<Compute
         checkedAt: { gte: dayStartUtc, lt: dayEndUtc },
       },
     }),
+    // Phase 29: trades saved that day after the trader proceeded past the
+    // AVOID market warning (Trade row flag — rule #3 userId-scoped).
+    db.trade.count({
+      where: {
+        userId,
+        ignoredAvoidWarning: true,
+        openedAt: { gte: dayStartUtc, lt: dayEndUtc },
+      },
+    }),
+    db.user.findUnique({
+      where: { id: userId },
+      select: { avoidOverrideWeight: true },
+    }),
   ]);
 
   // 4. Compute the daily P/L + loss breach + trade count breach.
@@ -306,6 +321,9 @@ export async function computeDailyScoreAction(dateStr?: string): Promise<Compute
     tradeCountBreached,
     lockoutOverrides: lockoutOverridesCount,
     warningOverrides: warningOverridesCount,
+    // Phase 29: ignored-AVOID trades + the user's configured weight.
+    avoidOverrides: avoidOverrideCount,
+    avoidOverrideWeight: userAvoidWeight?.avoidOverrideWeight ?? undefined,
     tiltEvents: tiltEventsCount,
     checklistCompleted: tradingSessionCount > 0,
     balanceCheckDone: balanceCheckCount > 0,

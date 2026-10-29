@@ -11,19 +11,23 @@
  *
  *   30 — RISK_PER_TRADE: stayed within risk-per-trade limit on every trade
  *   25 — NO_DAILY_BREACH: no daily loss or trade-count breach
- *   15 — NO_OVERRIDES: no overrides of lockouts or warnings
  *   15 — FOLLOWED_PLAN: followedPlan true on all trades
+ *   10 — NO_OVERRIDES: no overrides of lockouts or warnings
  *   10 — NO_TILT: no TILT events
  *    5 — CHECKLIST_AND_BALANCE: pre-trade checklist completed and balance check done
+ *    5 — AVOID_OVERRIDES: no trades saved after ignoring an AVOID market
+ *        warning (Phase 29 — weight configurable per user, 0–10, default 5)
  *
  * Total = 100. Each rule is binary (earn all-or-nothing) — the spec says
  * "stayed within... on every trade" / "no overrides" / "followedPlan true
- * on all trades" / "no TILT events" — all binary conditions.
+ * on all trades" / "no TILT events" — all binary conditions. The AVOID
+ * rule's weight is per-user (`avoidOverrideWeight`), so its `total` in the
+ * breakdown can differ from the base constant.
  *
  * Rest days: a day with 0 trades AND 0 breaches of any kind counts as a
  * "rest day" (neutral). It keeps the streak continuing without
  * incrementing it. The score for a rest day is still computed (it'll be
- * 30+25+15+15+10+0=95 because all rules are vacuously true except
+ * 30+25+10+15+10+5+0=95 because all rules are vacuously true except
  * checklist-and-balance) but the streak logic uses `isRestDay` rather than
  * the score threshold to keep things neutral.
  *
@@ -52,22 +56,26 @@ import Decimal from "decimal.js";
  *     risk-per-trade limit is the single most important discipline signal.
  *   - NO_DAILY_BREACH (25): the daily loss / trade-count guardrail is the
  *     second-most important — it prevents tilt-spending after a bad day.
- *   - NO_OVERRIDES (15): overriding a lockout is a discipline failure
- *     (you bypassed your own rules), but it's rarer so the weight is lower.
- *   - FOLLOWED_PLAN (15): trading off-plan is a discipline failure, weighted
- *     equal to overrides.
+ *   - NO_OVERRIDES (10): overriding a lockout is a discipline failure
+ *     (you bypassed your own rules), but it's rarer so the weight is lower
+ *     (trimmed from 15 when Phase 29 split out AVOID_OVERRIDES).
+ *   - FOLLOWED_PLAN (15): trading off-plan is a discipline failure.
  *   - NO_TILT (10): tilt events are signals of emotional trading — present
  *     even when no rule is formally breached.
  *   - CHECKLIST_AND_BALANCE (5): the smallest weight, but non-zero — the
  *     pre-trade checklist + balance check are routine discipline habits.
+ *   - AVOID_OVERRIDES (5): saving a trade after ignoring the AVOID market
+ *     warning (Phase 29). The per-user `avoidOverrideWeight` (0–10) can
+ *     override this default — 0 disables the deduction entirely.
  */
 export const DISCIPLINE_WEIGHTS = {
   RISK_PER_TRADE: 30,
   NO_DAILY_BREACH: 25,
-  NO_OVERRIDES: 15,
+  NO_OVERRIDES: 10,
   FOLLOWED_PLAN: 15,
   NO_TILT: 10,
   CHECKLIST_AND_BALANCE: 5,
+  AVOID_OVERRIDES: 5,
 } as const;
 
 export type DisciplineRuleKey = keyof typeof DISCIPLINE_WEIGHTS;
@@ -82,7 +90,8 @@ const _WEIGHT_TOTAL =
   DISCIPLINE_WEIGHTS.NO_OVERRIDES +
   DISCIPLINE_WEIGHTS.FOLLOWED_PLAN +
   DISCIPLINE_WEIGHTS.NO_TILT +
-  DISCIPLINE_WEIGHTS.CHECKLIST_AND_BALANCE;
+  DISCIPLINE_WEIGHTS.CHECKLIST_AND_BALANCE +
+  DISCIPLINE_WEIGHTS.AVOID_OVERRIDES;
 if (_WEIGHT_TOTAL !== 100) {
   throw new Error(
     `DISCIPLINE_WEIGHTS must sum to 100; got ${_WEIGHT_TOTAL}. Update the constants so the composite score stays on a 0-100 scale.`,
@@ -123,6 +132,13 @@ export type DisciplineDayInput = {
    *  severity that the trader proceeded past in Phase 17's confirmation
    *  dialog). */
   warningOverrides: number;
+  /** Phase 29: number of trades saved that day after the trader proceeded
+   *  past the AVOID market-rating confirmation dialog (Trade row flag). */
+  avoidOverrides?: number;
+  /** Phase 29: per-user weight for the AVOID_OVERRIDES rule (0–10).
+   *  Defaults to DISCIPLINE_WEIGHTS.AVOID_OVERRIDES when omitted; 0
+   *  disables the deduction. */
+  avoidOverrideWeight?: number;
   /** Number of TiltEvent rows (level=TILT, not just CAUTION) recorded
    *  that day. */
   tiltEvents: number;
@@ -164,16 +180,20 @@ export type DisciplineScoreResult = {
  *     `breachedRiskPerTrade: true` on each responsible trade).
  *   - NO_DAILY_BREACH: earn 25 iff neither `dailyLossBreached` nor
  *     `tradeCountBreached` is true.
- *   - NO_OVERRIDES: earn 15 iff `lockoutOverrides === 0 && warningOverrides === 0`.
+ *   - NO_OVERRIDES: earn 10 iff `lockoutOverrides === 0 && warningOverrides === 0`.
  *   - FOLLOWED_PLAN: earn 15 iff every trade has `followedPlan: true`.
  *   - NO_TILT: earn 10 iff `tiltEvents === 0`.
  *   - CHECKLIST_AND_BALANCE: earn 5 iff both `checklistCompleted` and
  *     `balanceCheckDone` are true.
+ *   - AVOID_OVERRIDES: earn the (configurable, default 5) weight iff
+ *     `avoidOverrides === 0` — no trades were saved after ignoring the
+ *     AVOID market warning that day. Weight 0 disables the rule.
  *
  * `isRestDay` = true iff `trades.length === 0` AND no breaches of any kind
  * AND `lockoutOverrides === 0` AND `warningOverrides === 0` AND
- * `tiltEvents === 0`. Rest days keep their score (typically 95 — only
- * CHECKLIST_AND_BALANCE is lost because the trader didn't trade) but the
+ * `avoidOverrides === 0` AND `tiltEvents === 0`. Rest days keep their score
+ * (typically 95 — only CHECKLIST_AND_BALANCE is lost because the trader
+ * didn't trade) but the
  * streak logic uses `isRestDay` to keep the streak continuing without
  * incrementing.
  *
@@ -215,7 +235,7 @@ export function dailyDisciplineScore(day: DisciplineDayInput): DisciplineScoreRe
       : "No daily loss or trade-count breach.",
   });
 
-  // 3. NO_OVERRIDES (15 pts)
+  // 3. NO_OVERRIDES (10 pts)
   const anyOverride = day.lockoutOverrides > 0 || day.warningOverrides > 0;
   breakdown.push({
     rule: "NO_OVERRIDES",
@@ -271,16 +291,53 @@ export function dailyDisciplineScore(day: DisciplineDayInput): DisciplineScoreRe
           : "No broker balance check done today.",
   });
 
-  // Total = sum of earned (already clamped to weight per rule).
+  // 7. AVOID_OVERRIDES (configurable weight, default 5) — Phase 29.
+  // Trades saved after ignoring the AVOID market warning cost the full
+  // weight for the day. Weight 0 (user setting) disables the deduction.
+  const avoidIgnored = (day.avoidOverrides ?? 0) > 0;
+  const avoidWeight = Math.min(
+    10,
+    Math.max(0, day.avoidOverrideWeight ?? DISCIPLINE_WEIGHTS.AVOID_OVERRIDES),
+  );
+  const avoidCount = day.avoidOverrides ?? 0;
+  breakdown.push({
+    rule: "AVOID_OVERRIDES",
+    earned: avoidWeight === 0 ? 0 : avoidIgnored ? 0 : avoidWeight,
+    total: avoidWeight,
+    lost: avoidWeight === 0 ? 0 : avoidIgnored ? avoidWeight : 0,
+    reason:
+      avoidWeight === 0
+        ? "AVOID-warning deduction disabled in settings."
+        : avoidIgnored
+          ? `${avoidCount} trade${avoidCount === 1 ? "" : "s"} saved after ignoring an AVOID market warning.`
+          : "No trades saved after an AVOID market warning.",
+    tradeIds: undefined,
+  });
+
+  // Total = earned, normalized against the CONFIGURED rule totals so the
+  // score always tops out at 100: with the default AVOID weight (5) the
+  // totals sum to 100 and this is a no-op; a user who lowers the weight
+  // (e.g. 0) shrinks the denominator instead of capping their best day
+  // below 100.
+  const totalWeights = breakdown.reduce((acc, b) => acc + b.total, 0);
   const rawScore = breakdown.reduce((acc, b) => acc + b.earned, 0);
-  const score = Math.max(0, Math.min(100, rawScore));
+  const score =
+    totalWeights > 0
+      ? Math.max(0, Math.min(100, Math.round((rawScore / totalWeights) * 100)))
+      : 100;
 
   // Rest day: 0 trades AND no breaches of any kind (no risk breach, no
-  // daily breach, no overrides, no tilt). The checklist/balance flag
+  // daily breach, no overrides, no AVOID-warning override, no tilt). The
+  // checklist/balance flag
   // doesn't disqualify a rest day — those are routine-habit points, not
   // breach indicators.
   const isRestDay =
-    day.trades.length === 0 && !anyRiskBreach && !anyDailyBreach && !anyOverride && !anyTilt;
+    day.trades.length === 0 &&
+    !anyRiskBreach &&
+    !anyDailyBreach &&
+    !anyOverride &&
+    !avoidIgnored &&
+    !anyTilt;
 
   return { score, breakdown, isRestDay };
 }

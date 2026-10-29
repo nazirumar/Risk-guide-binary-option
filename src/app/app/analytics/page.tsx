@@ -1,4 +1,5 @@
 import { BarChart3, TrendingUp, TrendingDown, Calculator } from "lucide-react";
+import Link from "next/link";
 import { requireUser } from "@/server/lib/require-user";
 import { getActiveAccount, listUserAccounts } from "@/server/actions/active-account";
 import { getAnalytics, type AnalyticsFilter } from "@/server/lib/analytics";
@@ -137,12 +138,21 @@ export default async function AnalyticsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
-        <p className="text-sm text-muted-foreground">
-          {result.counts.total} trades · {result.counts.wins}W / {result.counts.losses}L /{" "}
-          {result.counts.ties}T
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
+          <p className="text-sm text-muted-foreground">
+            {result.counts.total} trades · {result.counts.wins}W / {result.counts.losses}L /{" "}
+            {result.counts.ties}T
+          </p>
+        </div>
+        <Link
+          href="/app/analytics/market-edge"
+          className="text-sm text-primary hover:underline"
+          data-testid="market-edge-link"
+        >
+          Market edge (by rating & session) →
+        </Link>
       </div>
 
       {/* Filter bar */}

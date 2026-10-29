@@ -53,17 +53,20 @@ describe("DISCIPLINE_WEIGHTS — sum to 100", () => {
       DISCIPLINE_WEIGHTS.NO_OVERRIDES +
       DISCIPLINE_WEIGHTS.FOLLOWED_PLAN +
       DISCIPLINE_WEIGHTS.NO_TILT +
-      DISCIPLINE_WEIGHTS.CHECKLIST_AND_BALANCE;
+      DISCIPLINE_WEIGHTS.CHECKLIST_AND_BALANCE +
+      DISCIPLINE_WEIGHTS.AVOID_OVERRIDES;
     expect(total).toBe(100);
   });
 
   it("individual weights match the spec", () => {
     expect(DISCIPLINE_WEIGHTS.RISK_PER_TRADE).toBe(30);
     expect(DISCIPLINE_WEIGHTS.NO_DAILY_BREACH).toBe(25);
-    expect(DISCIPLINE_WEIGHTS.NO_OVERRIDES).toBe(15);
+    // Phase 29: NO_OVERRIDES trimmed 15 → 10 to make room for AVOID_OVERRIDES.
+    expect(DISCIPLINE_WEIGHTS.NO_OVERRIDES).toBe(10);
     expect(DISCIPLINE_WEIGHTS.FOLLOWED_PLAN).toBe(15);
     expect(DISCIPLINE_WEIGHTS.NO_TILT).toBe(10);
     expect(DISCIPLINE_WEIGHTS.CHECKLIST_AND_BALANCE).toBe(5);
+    expect(DISCIPLINE_WEIGHTS.AVOID_OVERRIDES).toBe(5);
   });
 });
 
@@ -83,7 +86,7 @@ describe("dailyDisciplineScore — perfect day + per-rule deductions", () => {
     );
     expect(r.score).toBe(100);
     expect(r.isRestDay).toBe(false);
-    expect(r.breakdown).toHaveLength(6);
+    expect(r.breakdown).toHaveLength(7);
     // Every rule earned full points.
     for (const b of r.breakdown) expect(b.earned).toBe(b.total);
   });
@@ -169,7 +172,7 @@ describe("dailyDisciplineScore — perfect day + per-rule deductions", () => {
     expect(breachRule.reason).toMatch(/daily loss limit \+ max trades per day/);
   });
 
-  it("NO_OVERRIDES: 1 lockout override → lose 15 (score=85)", () => {
+  it("NO_OVERRIDES: 1 lockout override → lose 10 (score=90)", () => {
     const r = dailyDisciplineScore(
       baseDay({
         trades: [{ id: "t1", stake: "10", followedPlan: true }],
@@ -178,13 +181,13 @@ describe("dailyDisciplineScore — perfect day + per-rule deductions", () => {
         balanceCheckDone: true,
       }),
     );
-    expect(r.score).toBe(85);
+    expect(r.score).toBe(90);
     const overridesRule = r.breakdown.find((b) => b.rule === "NO_OVERRIDES")!;
     expect(overridesRule.earned).toBe(0);
     expect(overridesRule.reason).toMatch(/1 lockout override/);
   });
 
-  it("NO_OVERRIDES: 1 warning override → lose 15 (score=85)", () => {
+  it("NO_OVERRIDES: 1 warning override → lose 10 (score=90)", () => {
     const r = dailyDisciplineScore(
       baseDay({
         trades: [{ id: "t1", stake: "10", followedPlan: true }],
@@ -193,10 +196,10 @@ describe("dailyDisciplineScore — perfect day + per-rule deductions", () => {
         balanceCheckDone: true,
       }),
     );
-    expect(r.score).toBe(85);
+    expect(r.score).toBe(90);
   });
 
-  it("NO_OVERRIDES: both lockout + warning → lose 15 (not double)", () => {
+  it("NO_OVERRIDES: both lockout + warning → lose 10 (not double)", () => {
     const r = dailyDisciplineScore(
       baseDay({
         trades: [{ id: "t1", stake: "10", followedPlan: true }],
@@ -206,7 +209,73 @@ describe("dailyDisciplineScore — perfect day + per-rule deductions", () => {
         balanceCheckDone: true,
       }),
     );
-    expect(r.score).toBe(85); // single rule, all-or-nothing
+    expect(r.score).toBe(90); // single rule, all-or-nothing
+  });
+
+  it("AVOID_OVERRIDES: trade saved after ignoring an AVOID warning → lose 5 (score=95)", () => {
+    const r = dailyDisciplineScore(
+      baseDay({
+        trades: [{ id: "t1", stake: "10", followedPlan: true }],
+        avoidOverrides: 1,
+        checklistCompleted: true,
+        balanceCheckDone: true,
+      }),
+    );
+    expect(r.score).toBe(95);
+    const avoidRule = r.breakdown.find((b) => b.rule === "AVOID_OVERRIDES")!;
+    expect(avoidRule.earned).toBe(0);
+    expect(avoidRule.total).toBe(DISCIPLINE_WEIGHTS.AVOID_OVERRIDES);
+    expect(avoidRule.lost).toBe(DISCIPLINE_WEIGHTS.AVOID_OVERRIDES);
+    expect(avoidRule.reason).toMatch(/ignoring an AVOID market warning/);
+  });
+
+  it("AVOID_OVERRIDES: configurable weight replaces the default (weight 3 → lose 3)", () => {
+    const r = dailyDisciplineScore(
+      baseDay({
+        trades: [{ id: "t1", stake: "10", followedPlan: true }],
+        avoidOverrides: 2,
+        avoidOverrideWeight: 3,
+        checklistCompleted: true,
+        balanceCheckDone: true,
+      }),
+    );
+    expect(r.score).toBe(97);
+    const avoidRule = r.breakdown.find((b) => b.rule === "AVOID_OVERRIDES")!;
+    expect(avoidRule.total).toBe(3);
+    expect(avoidRule.lost).toBe(3);
+    expect(avoidRule.reason).toMatch(/2 trades saved/);
+  });
+
+  it("AVOID_OVERRIDES: weight 0 disables the deduction entirely", () => {
+    const r = dailyDisciplineScore(
+      baseDay({
+        trades: [{ id: "t1", stake: "10", followedPlan: true }],
+        avoidOverrides: 1,
+        avoidOverrideWeight: 0,
+        checklistCompleted: true,
+        balanceCheckDone: true,
+      }),
+    );
+    expect(r.score).toBe(100);
+    const avoidRule = r.breakdown.find((b) => b.rule === "AVOID_OVERRIDES")!;
+    expect(avoidRule.total).toBe(0);
+    expect(avoidRule.earned).toBe(0);
+    expect(avoidRule.lost).toBe(0);
+    expect(avoidRule.reason).toMatch(/disabled in settings/);
+  });
+
+  it("AVOID_OVERRIDES: no ignored warnings → full weight earned", () => {
+    const r = dailyDisciplineScore(
+      baseDay({
+        trades: [{ id: "t1", stake: "10", followedPlan: true }],
+        avoidOverrides: 0,
+        checklistCompleted: true,
+        balanceCheckDone: true,
+      }),
+    );
+    expect(r.score).toBe(100);
+    const avoidRule = r.breakdown.find((b) => b.rule === "AVOID_OVERRIDES")!;
+    expect(avoidRule.earned).toBe(avoidRule.total);
   });
 
   it("FOLLOWED_PLAN: one trade broke plan → lose 15 (score=85)", () => {
@@ -285,6 +354,7 @@ describe("dailyDisciplineScore — perfect day + per-rule deductions", () => {
         tradeCountBreached: true,
         lockoutOverrides: 1,
         warningOverrides: 1,
+        avoidOverrides: 1,
         tiltEvents: 1,
         checklistCompleted: false,
         balanceCheckDone: false,
@@ -301,9 +371,9 @@ describe("dailyDisciplineScore — rest day detection", () => {
   it("no trades + no breaches → isRestDay=true, score=95 (only CHECKLIST_AND_BALANCE lost)", () => {
     const r = dailyDisciplineScore(baseDay({}));
     expect(r.isRestDay).toBe(true);
-    // RISK_PER_TRADE (vacuous 30) + NO_DAILY_BREACH (25) + NO_OVERRIDES (15) +
-    // FOLLOWED_PLAN (vacuous 15) + NO_TILT (10) = 95. CHECKLIST_AND_BALANCE
-    // is 0 because the user didn't do them.
+    // RISK_PER_TRADE (vacuous 30) + NO_DAILY_BREACH (25) + NO_OVERRIDES (10) +
+    // FOLLOWED_PLAN (vacuous 15) + NO_TILT (10) + AVOID_OVERRIDES (vacuous 5)
+    // = 95. CHECKLIST_AND_BALANCE is 0 because the user didn't do them.
     expect(r.score).toBe(95);
   });
 
@@ -318,8 +388,8 @@ describe("dailyDisciplineScore — rest day detection", () => {
       baseDay({ lockoutOverrides: 1, checklistCompleted: true, balanceCheckDone: true }),
     );
     expect(r.isRestDay).toBe(false);
-    // 100 - 15 (NO_OVERRIDES) = 85.
-    expect(r.score).toBe(85);
+    // 100 - 10 (NO_OVERRIDES) = 90.
+    expect(r.score).toBe(90);
   });
 
   it("no trades but 1 tilt event → NOT a rest day", () => {

@@ -197,6 +197,15 @@ model User {
   preTradeRequirePlanCheckbox Boolean @default(false)
   /// Phase 17: whether the modal asks for a quick "reason for entry".
   preTradeReasonMode        PreTradeReasonMode @default(OPTIONAL)
+  /// Phase 29: show live market-rating warnings (GOOD/CAUTION/AVOID) in the
+  /// Add Trade flow + the pre-trade confirmation screen.
+  marketWarningsEnabled     Boolean @default(true)
+  /// Phase 29: skip the AVOID confirm dialog on DEMO accounts only (the
+  /// warning badge still shows; REAL accounts always get the dialog).
+  marketWarningsIgnoreAvoidDemo Boolean @default(false)
+  /// Phase 29: discipline weight (0-10) deducted when a trade is saved after
+  /// ignoring an AVOID warning. 0 disables the deduction.
+  avoidOverrideWeight       Int     @default(5)
   /// Phase 18: tolerance (in percent, 0.5 = 0.5%) below which a balance check
   /// is automatically marked MATCHED instead of triggering an adjustment flow.
   balanceSyncTolerancePercent Decimal @default(0.5)
@@ -505,6 +514,9 @@ model Trade {
   volatilityPercentile  Float?
   marketSession         String?
   marketDataMissing     Boolean    @default(false)
+  /// Phase 29: the trader proceeded past the AVOID confirmation dialog
+  /// (advisory warning — choice is logged and feeds the discipline score).
+  ignoredAvoidWarning   Boolean    @default(false)
 
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt

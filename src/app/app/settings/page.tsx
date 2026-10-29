@@ -7,6 +7,7 @@ import { NotificationPrefsForm } from "@/components/settings/NotificationPrefsFo
 import { TradingHoursForm } from "@/components/settings/TradingHoursForm";
 import { DefaultStakingPlanForm } from "@/components/settings/DefaultStakingPlanForm";
 import { PreTradeConfirmSettingsForm } from "@/components/settings/PreTradeConfirmSettingsForm";
+import { MarketWarningSettingsForm } from "@/components/settings/MarketWarningSettingsForm";
 import { BalanceSyncSettingsForm } from "@/components/settings/BalanceSyncSettingsForm";
 import { BigWinDaySettingsForm } from "@/components/withdrawal/BigWinDaySettingsForm";
 import { NewsWarningSettingsForm } from "@/components/news/NewsWarningSettingsForm";
@@ -31,6 +32,9 @@ export default async function SettingsPage() {
         preTradeCooldownSeconds: true,
         preTradeRequirePlanCheckbox: true,
         preTradeReasonMode: true,
+        marketWarningsEnabled: true,
+        marketWarningsIgnoreAvoidDemo: true,
+        avoidOverrideWeight: true,
         balanceSyncTolerancePercent: true,
         balanceSyncReminderFrequency: true,
         bigWinDayPercent: true,
@@ -93,6 +97,15 @@ export default async function SettingsPage() {
           cooldownSeconds: user?.preTradeCooldownSeconds ?? 5,
           requirePlanCheckbox: user?.preTradeRequirePlanCheckbox ?? false,
           reasonMode: user?.preTradeReasonMode ?? "OPTIONAL",
+        }}
+      />
+
+      {/* Phase 29: live market-rating warnings + AVOID discipline weight */}
+      <MarketWarningSettingsForm
+        defaults={{
+          warningsEnabled: user?.marketWarningsEnabled ?? true,
+          ignoreAvoidOnDemo: user?.marketWarningsIgnoreAvoidDemo ?? false,
+          avoidOverrideWeight: user?.avoidOverrideWeight ?? 5,
         }}
       />
 

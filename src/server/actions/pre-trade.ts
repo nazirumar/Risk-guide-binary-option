@@ -37,6 +37,7 @@ import {
   cancelTradeAttemptSchema,
 } from "@/lib/validation";
 import { describeCancelReason } from "@/server/actions/pre-trade-types";
+import { buildMarketWarningInfo } from "@/server/lib/trade-market";
 import type {
   PrepareConfirmationResult,
   CancelAttemptResult,
@@ -156,6 +157,14 @@ export async function prepareTradeConfirmationAction(
   const settings = await getPreTradeSettings(userId);
   const confirmationRequired = !(account.type === "DEMO" && settings.skipDemo);
 
+  // Phase 29: live market rating + the trader's own pair×session record for
+  // the pre-trade screen (hasData:false → "No market data", never a guess).
+  const market = await buildMarketWarningInfo(
+    userId,
+    parsed.data.asset,
+    account.type === "DEMO" ? "DEMO" : "REAL",
+  );
+
   // Issue the signed token — binds the reviewed trade params + cooldown.
   const tradeParams = extractTradeParams(formData);
   if (!tradeParams) {
@@ -177,6 +186,7 @@ export async function prepareTradeConfirmationAction(
       severity: riskCheck.severity,
       reasons: riskCheck.reasons,
       tilt: tiltResult,
+      market,
     };
   }
 
@@ -221,6 +231,7 @@ export async function prepareTradeConfirmationAction(
       requirePlanCheckbox: settings.requirePlanCheckbox,
       reasonMode: settings.reasonMode,
     },
+    market,
   };
 }
 

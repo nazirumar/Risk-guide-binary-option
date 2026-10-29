@@ -13,7 +13,11 @@ import { FormField } from "@/components/trader/FormField";
 import { FormError, FormSuccess } from "@/components/auth/AuthShell";
 import { AssetCombobox } from "./AssetCombobox";
 import { PreTradeConfirmDialog } from "./PreTradeConfirmDialog";
+import { MarketRatingPanel } from "./MarketRatingPanel";
+import { AvoidWarningDialog, type AvoidWarningDialogState } from "./AvoidWarningDialog";
+import { describeAvoidWarning } from "@/lib/market/trade-snapshot";
 import type { ConfirmationSummary } from "@/lib/calc/confirmation";
+import type { PrepareMarketInfo } from "@/server/actions/pre-trade-types";
 import { createTradeAction } from "@/server/actions/trades";
 import {
   prepareTradeConfirmationAction,
@@ -129,7 +133,15 @@ export function AddTradeForm({
     warnings: string[];
     requirePlanCheckbox: boolean;
     reasonMode: "OFF" | "OPTIONAL" | "REQUIRED";
+    /** Phase 29: live rating + personal edge for the confirmation screen. */
+    market?: PrepareMarketInfo;
   } | null>(null);
+  // Phase 29: the AVOID market-warning dialog — holds the prepare result so
+  // "Continue anyway" proceeds without re-running the server checks.
+  const [avoidState, setAvoidState] = useState<AvoidWarningDialogState | null>(null);
+  /** Set when the trader continues past the AVOID dialog; consumed by the
+   *  next save so the choice is stored on the Trade row. */
+  const ignoredAvoidRef = useRef(false);
   const router = useRouter();
 
   const activeAccount = accounts.find((a) => a.id === form.tradingAccountId);
@@ -208,6 +220,8 @@ export function AddTradeForm({
     if (form.setupNotes) fd.set("setupNotes", form.setupNotes);
     if (form.screenshotUrl) fd.set("screenshotUrl", form.screenshotUrl);
     for (const tag of form.tags) fd.append("tags", tag);
+    // Phase 29: the AVOID-warning choice (server re-verifies the rating).
+    if (ignoredAvoidRef.current) fd.set("ignoredAvoidWarning", "true");
     return fd;
   }
 
@@ -227,6 +241,7 @@ export function AddTradeForm({
       }
       setConfirmState(null);
       toast({ title: "Trade saved", description: res.message });
+      ignoredAvoidRef.current = false;
       // Reset only the volatile fields; keep account/asset/strategy/direction.
       setForm((f) => ({ ...f, stake: "", setupNotes: "", screenshotUrl: "", tags: [] }));
       setTagInput("");
@@ -269,6 +284,10 @@ export function AddTradeForm({
     setFieldErrors({});
 
     startTransition(async () => {
+      // Each submit re-evaluates the AVOID warning against fresh conditions —
+      // an acknowledgement only applies to the prepare→save cycle after it.
+      ignoredAvoidRef.current = false;
+
       // Phase 17 step 1: prepare — validate + risk check + tilt check + issue
       // the signed confirmation token. Nothing is saved yet.
       const prep = await prepareTradeConfirmationAction(buildFormData());
@@ -295,21 +314,86 @@ export function AddTradeForm({
         setTiltResult(prep.tilt);
       }
 
-      if (prep.needsConfirmation && prep.confirmationToken && prep.summary && prep.notBefore) {
-        setConfirmState({
-          token: prep.confirmationToken,
-          notBefore: prep.notBefore,
-          summary: prep.summary,
-          warnings: prep.severity === "WARN" && prep.reasons?.length ? prep.reasons : [],
-          requirePlanCheckbox: prep.settings?.requirePlanCheckbox ?? false,
-          reasonMode: prep.settings?.reasonMode ?? "OPTIONAL",
-        });
+      // Phase 29: AVOID market warning — confirm before proceeding. Advisory:
+      // the trader may continue, and the choice is logged on the trade.
+      if (prep.market?.avoidConfirmRequired) {
+        openAvoidDialog(prep);
         return;
       }
 
-      // Confirmation skipped (DEMO + user setting) — save immediately with
-      // the token the server issued during prepare.
-      await doSaveDirect(prep.confirmationToken);
+      proceedWithPrepared(prep);
+    });
+  }
+
+  /** Extracted Phase 17 step 2: open the confirmation modal, or save directly
+   *  when the user's DEMO setting skips it. */
+  function proceedWithPrepared(prep: Awaited<ReturnType<typeof prepareTradeConfirmationAction>>) {
+    if (prep.needsConfirmation && prep.confirmationToken && prep.summary && prep.notBefore) {
+      setConfirmState({
+        token: prep.confirmationToken,
+        notBefore: prep.notBefore,
+        summary: prep.summary,
+        warnings: prep.severity === "WARN" && prep.reasons?.length ? prep.reasons : [],
+        requirePlanCheckbox: prep.settings?.requirePlanCheckbox ?? false,
+        reasonMode: prep.settings?.reasonMode ?? "OPTIONAL",
+        market: prep.market,
+      });
+      return;
+    }
+
+    // Confirmation skipped (DEMO + user setting) — save immediately with
+    // the token the server issued during prepare.
+    doSaveDirect(prep.confirmationToken);
+  }
+
+  /** Phase 29: show the AVOID confirm dialog, holding the prepare result. */
+  function openAvoidDialog(prep: Awaited<ReturnType<typeof prepareTradeConfirmationAction>>) {
+    const described = describeAvoidWarning({
+      rating: prep.market?.rating ?? null,
+      score: prep.market?.score ?? null,
+      reasons: prep.market?.reasons ?? [],
+      nextNewsTitle: prep.market?.nextNewsTitle ?? null,
+      nextNewsMinutesTo: prep.market?.nextNewsMinutesTo ?? null,
+    });
+    setAvoidState({
+      headline: described.headline,
+      reasons: described.reasons,
+      ratingScore: prep.market?.score ?? null,
+    });
+    heldPrepareRef.current = prep;
+  }
+
+  /** "Continue anyway" on the AVOID dialog — proceed with the held prepare
+   *  and stamp the choice onto the trade (server re-verifies the rating). */
+  function onAvoidContinue() {
+    const prep = heldPrepareRef.current;
+    heldPrepareRef.current = null;
+    setAvoidState(null);
+    ignoredAvoidRef.current = true;
+    if (!prep) return;
+    proceedWithPrepared(prep);
+  }
+
+  /** Cancel from the AVOID dialog — record it as a traded-you-avoided row. */
+  function onAvoidCancel() {
+    heldPrepareRef.current = null;
+    setAvoidState(null);
+    ignoredAvoidRef.current = false;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("stake", form.stake || "0");
+      fd.set("asset", form.asset || "unknown");
+      fd.set("reason", "Cancelled at the AVOID market warning.");
+      const res = await cancelTradeAttemptAction(fd);
+      if (res.ok) {
+        toast({
+          title: "Trade cancelled",
+          description: "Logged under \u201cTrades you avoided\u201d. Discipline kept.",
+        });
+      } else {
+        setError(res.message);
+      }
+      router.refresh();
     });
   }
 
@@ -326,6 +410,7 @@ export function AddTradeForm({
         return;
       }
       toast({ title: "Trade saved", description: res.message });
+      ignoredAvoidRef.current = false;
       setForm((f) => ({ ...f, stake: "", setupNotes: "", screenshotUrl: "", tags: [] }));
       setTagInput("");
       router.refresh();
@@ -345,18 +430,13 @@ export function AddTradeForm({
     const prep = heldPrepareRef.current;
     heldPrepareRef.current = null;
     if (!prep) return;
-    if (prep.needsConfirmation && prep.confirmationToken && prep.summary && prep.notBefore) {
-      setConfirmState({
-        token: prep.confirmationToken,
-        notBefore: prep.notBefore,
-        summary: prep.summary,
-        warnings: prep.severity === "WARN" && prep.reasons?.length ? prep.reasons : [],
-        requirePlanCheckbox: prep.settings?.requirePlanCheckbox ?? false,
-        reasonMode: prep.settings?.reasonMode ?? "OPTIONAL",
-      });
-    } else if (prep.confirmationToken) {
-      doSaveDirect(prep.confirmationToken);
+    // Phase 29: the AVOID warning still applies after the tilt dialog —
+    // re-queue it the same way the submit flow does.
+    if (prep.market?.avoidConfirmRequired) {
+      openAvoidDialog(prep);
+      return;
     }
+    proceedWithPrepared(prep);
   }
 
   async function takeTiltBreak() {
@@ -402,6 +482,9 @@ export function AddTradeForm({
         </FormField>
         <FormField label="Asset" htmlFor="asset" error={fieldErrors.asset} required>
           <AssetCombobox value={form.asset} onChange={(v) => set("asset", v)} disabled={pending} />
+          {/* Phase 29: live market rating beside the pair — GOOD/CAUTION/AVOID
+              or "No market data" for OTC/unknown instruments (never guessed). */}
+          <MarketRatingPanel asset={form.asset} tradingAccountId={form.tradingAccountId} />
         </FormField>
       </div>
 
@@ -808,11 +891,21 @@ export function AddTradeForm({
           warnings={confirmState.warnings}
           requirePlanCheckbox={confirmState.requirePlanCheckbox}
           reasonMode={confirmState.reasonMode}
+          market={confirmState.market}
           pending={pending}
           onConfirm={onConfirmFromDialog}
           onCancel={onCancelConfirm}
         />
       )}
+
+      {/* Phase 29: AVOID market-rating confirmation — advisory, always allows
+          continuing; the choice is stored on the trade when saved. */}
+      <AvoidWarningDialog
+        state={avoidState}
+        pending={pending}
+        onContinue={onAvoidContinue}
+        onCancel={onAvoidCancel}
+      />
     </form>
   );
 }

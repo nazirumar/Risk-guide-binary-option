@@ -5,7 +5,7 @@
   "description": "RiskGuard — professional money & risk management app for binary options traders",
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build": "prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "worker": "cd worker && bun run start",
     "worker:dev": "cd worker && bun run dev",

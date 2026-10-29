@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatMoney, formatPercent } from "@/lib/format";
 import type { ConfirmationSummary } from "@/lib/calc/confirmation";
+import type { PrepareMarketInfo } from "@/server/actions/pre-trade-types";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, CheckCircle2, ShieldAlert, Timer } from "lucide-react";
 
@@ -44,6 +45,8 @@ export type PreTradeConfirmDialogProps = {
   warnings: string[];
   requirePlanCheckbox: boolean;
   reasonMode: "OFF" | "OPTIONAL" | "REQUIRED";
+  /** Phase 29: live market rating + the trader's own pair×session record. */
+  market?: PrepareMarketInfo;
   /** Parent's transition pending — disables buttons while saving/cancelling. */
   pending: boolean;
   onConfirm: (details: { planChecked: boolean; entryReason: string }) => void;
@@ -57,6 +60,7 @@ export function PreTradeConfirmDialog({
   warnings,
   requirePlanCheckbox,
   reasonMode,
+  market,
   pending,
   onConfirm,
   onCancel,
@@ -280,7 +284,67 @@ export function PreTradeConfirmDialog({
               </span>
             )}
           </SummaryRow>
+
+          {/* Phase 29: live market rating at confirm time */}
+          <SummaryRow label="Market now">
+            {market && market.hasData && market.rating ? (
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span
+                  className={cn(
+                    "rounded px-1.5 py-0.5 text-xs font-bold",
+                    market.rating === "GOOD"
+                      ? "bg-profit/15 text-profit"
+                      : market.rating === "CAUTION"
+                        ? "bg-warning/15 text-warning"
+                        : "bg-loss/15 text-loss",
+                  )}
+                  data-testid="pretrade-market-rating"
+                >
+                  {market.rating}
+                  {market.score != null ? ` · ${market.score}` : ""}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {market.session ?? ""}
+                  {market.volatilityPercentile != null
+                    ? ` · vol ${Math.round(market.volatilityPercentile)}th pct`
+                    : ""}
+                </span>
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground" data-testid="pretrade-market-rating">
+                No market data
+              </span>
+            )}
+          </SummaryRow>
+
+          {/* Phase 29: the trader's own result for this pair × session */}
+          <SummaryRow label="Your record here">
+            {market?.personal ? (
+              <span
+                className="text-xs font-medium"
+                data-testid="pretrade-market-personal"
+              >
+                {market.personal.trades} trades ·{" "}
+                {Math.round(market.personal.winRate * 100)}% win rate (range{" "}
+                {Math.round(market.personal.winRateLow * 100)}–
+                {Math.round(market.personal.winRateHigh * 100)}%) ·{" "}
+                {market.personal.reliability.toLowerCase()} reliability
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground" data-testid="pretrade-market-personal">
+                Need more trades (at least 30) to describe a pattern
+              </span>
+            )}
+          </SummaryRow>
         </div>
+
+        {/* Phase 29: descriptive-only footer for the market rows */}
+        {market && (
+          <p className="text-[10px] text-muted-foreground -mt-1">
+            Ratings describe current conditions, not outcomes — past results don&apos;t guarantee
+            future results.
+          </p>
+        )}
 
         {/* Required plan checkbox */}
         {requirePlanCheckbox && (

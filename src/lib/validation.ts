@@ -222,6 +222,11 @@ export const createTradeSchema = z.object({
   /** Quick "reason for entry" typed in the confirmation modal (merged into
    *  setupNotes; mandatory when the user's settings say REQUIRED). */
   entryReason: z.string().max(500, "Reason is too long").optional().nullable(),
+  // ── Phase 29: market-rating warning ──
+  /** True when the trader pressed "Continue" on the AVOID confirmation
+   *  dialog. The server re-verifies the rating before storing it — the flag
+   *  is metadata (feeds the discipline deduction), never a block. */
+  ignoredAvoidWarning: z.boolean().default(false),
 });
 
 export const closeTradeSchema = z.object({
@@ -303,6 +308,21 @@ export const cancelTradeAttemptSchema = z.object({
     .refine((v) => v < 10_000_000, "Stake is too large"),
   asset: z.string().min(1, "Asset is required").max(50, "Asset is too long"),
   reason: z.string().max(500, "Reason is too long").optional().nullable(),
+});
+
+// ─── Phase 29: Market-rating warnings ────────────────────────────────────
+
+export const marketWarningSettingsSchema = z.object({
+  /** Show the live GOOD/CAUTION/AVOID warnings in the Add Trade flow. */
+  warningsEnabled: z.boolean(),
+  /** Skip the AVOID confirm dialog on DEMO accounts (badge still shows). */
+  ignoreAvoidOnDemo: z.boolean(),
+  /** Discipline weight (0–10) lost when an AVOID warning is ignored. 0 = off. */
+  avoidOverrideWeight: z
+    .number({ message: "Weight must be a number" })
+    .int("Weight must be a whole number")
+    .min(0, "Weight cannot be negative")
+    .max(10, "Weight cannot exceed 10"),
 });
 
 // ─── Phase 18: Broker Balance Sync Checks ───────────────────────────────

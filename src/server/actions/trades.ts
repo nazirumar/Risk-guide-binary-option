@@ -33,6 +33,7 @@ import {
   bulkDeleteTradesSchema,
 } from "@/lib/validation";
 import { recomputeAccountBalanceInTx } from "@/server/actions/accounts";
+import { getTradeMarketSnapshot } from "@/server/lib/trade-market";
 
 export type TradeActionResult = {
   ok: boolean;
@@ -91,6 +92,7 @@ export async function createTradeAction(formData: FormData): Promise<TradeAction
       ? String(formData.get("confirmationToken"))
       : undefined,
     entryReason: formData.get("entryReason") ? String(formData.get("entryReason")) : undefined,
+    ignoredAvoidWarning: formData.get("ignoredAvoidWarning") === "true",
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -235,6 +237,14 @@ export async function createTradeAction(formData: FormData): Promise<TradeAction
   const payoutDecimal = new Decimal(parsed.data.payoutPercent).toDecimalPlaces(4);
   const openedAt = new Date();
 
+  // Phase 29: snapshot the live market condition at save time. No data (OTC,
+  // unknown pair, stale feed) → all-null + marketDataMissing — never faked.
+  const marketSnapshot = await getTradeMarketSnapshot(parsed.data.asset, openedAt);
+  // The AVOID choice is only meaningful when the condition actually IS AVOID
+  // right now — a stale client flag must not label a trade it didn't apply to.
+  const ignoredAvoidWarning =
+    parsed.data.ignoredAvoidWarning && marketSnapshot.marketRating === "AVOID";
+
   const trade = await db.$transaction(async (tx) => {
     const t = await tx.trade.create({
       data: {
@@ -255,6 +265,13 @@ export async function createTradeAction(formData: FormData): Promise<TradeAction
         followedPlan: parsed.data.followedPlan,
         screenshotUrl: parsed.data.screenshotUrl || null,
         tags: parsed.data.tags,
+        // Phase 29 — market condition snapshot at trade time.
+        marketRating: marketSnapshot.marketRating,
+        marketScore: marketSnapshot.marketScore,
+        volatilityPercentile: marketSnapshot.volatilityPercentile,
+        marketSession: marketSnapshot.marketSession,
+        marketDataMissing: marketSnapshot.marketDataMissing,
+        ignoredAvoidWarning,
       },
     });
 
@@ -281,6 +298,12 @@ export async function createTradeAction(formData: FormData): Promise<TradeAction
           confirmedViaToken: verifiedPayload ? true : false,
           confirmationJti: verifiedPayload?.jti ?? null,
           entryReason,
+          // Phase 29: market snapshot + the AVOID-warning choice (rule #8).
+          marketRating: marketSnapshot.marketRating,
+          marketScore: marketSnapshot.marketScore,
+          marketSession: marketSnapshot.marketSession,
+          marketDataMissing: marketSnapshot.marketDataMissing,
+          ignoredAvoidWarning,
         },
       },
     });
