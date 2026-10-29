@@ -8,6 +8,7 @@ import { BigWinDayPromptBanner } from "@/components/withdrawal/BigWinDayPromptBa
 import { BankedVsAtRiskCard } from "@/components/withdrawal/BankedVsAtRiskCard";
 import { DisciplineScoreCard } from "@/components/discipline/DisciplineScoreCard";
 import { MarketNowWidget } from "@/components/market/MarketNowWidget";
+import { DailyGoalTracker } from "@/components/goals/DailyGoalTracker";
 import { requireUser } from "@/server/lib/require-user";
 import { getActiveAccount, listUserAccounts } from "@/server/actions/active-account";
 import { getDashboardStats } from "@/server/lib/analytics";
@@ -198,6 +199,8 @@ export default async function DashboardPage() {
 
       {/* Phase 28 — "Market now" widget: top 3 pairs + next high-impact news */}
       <MarketNowWidget />
+
+      <DailyGoalTracker goalAmount={100} currentAmount={Number((stats as any).todayPL?.toString() || 0) > 0 ? Number((stats as any).todayPL?.toString() || 0) : 0} />
 
       {/* Risk meter */}
       {riskProfile && (

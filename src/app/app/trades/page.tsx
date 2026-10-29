@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AddTradeForm } from "@/components/trades/AddTradeForm";
 import { AddTradeDialog } from "@/components/trades/AddTradeDialog";
 import { TradesTable } from "@/components/trades/TradesTable";
+import { PayoutCalculator } from "@/components/trades/PayoutCalculator";
+import { TradeSetupChecklist } from "@/components/trades/TradeSetupChecklist";
 
 export default async function TradesPage() {
   const { userId } = await requireUser();
@@ -108,6 +110,11 @@ export default async function TradesPage() {
           />
         </div>
       </details>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <TradeSetupChecklist />
+        <PayoutCalculator />
+      </div>
 
       {/* Trades table with filters, bulk delete, inline edit, detail drawer. */}
       <Suspense fallback={<Skeleton className="h-64" />}>
