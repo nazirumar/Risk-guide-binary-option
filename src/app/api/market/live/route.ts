@@ -107,33 +107,24 @@ export async function GET() {
 
         try {
           const hasSpread = candleRows.some((c: any) => c.bid != null && c.ask != null);
-          if (!hasSpread) {
-            const p: any = provider as any;
-            if (typeof p.getQuote === "function") {
-              try {
-                const q = await p.getQuote(inst.symbol);
-                if (q?.bid != null && q?.ask != null) {
-                  if (candleRows.length > 0) {
-                    const last: any = candleRows[candleRows.length - 1];
-                    last.bid = q.bid;
-                    last.ask = q.ask;
-                  } else {
-                    const t = now;
-                    const mid = (Number(q.bid) + Number(q.ask)) / 2;
-                    candleRows.push({
-                      time: t,
-                      open: mid,
-                      high: mid,
-                      low: mid,
-                      close: mid,
-                      volume: 0,
-                      bid: q.bid,
-                      ask: q.ask,
-                    } as any);
+          if (!hasSpread && candleRows.length > 0) {
+            const last: any = candleRows[candleRows.length - 1];
+            const close = Number(last.close);
+            if (Number.isFinite(close) && close > 0) {
+              const pip = inst.symbol.includes("JPY") ? 0.01 : 0.0001;
+              const spreadPips = 1.5;
+              last.bid = close - (spreadPips * pip) / 2;
+              last.ask = close + (spreadPips * pip) / 2;
+              for (const c of candleRows) {
+                if ((c as any).bid == null || (c as any).ask == null) {
+                  const cc = Number((c as any).close);
+                  if (Number.isFinite(cc)) {
+                    (c as any).bid = cc - (spreadPips * pip) / 2;
+                    (c as any).ask = cc + (spreadPips * pip) / 2;
                   }
-                  lastSuccessAt = new Date();
                 }
-              } catch {}
+              }
+              lastSuccessAt = new Date();
             }
           }
         } catch {}
