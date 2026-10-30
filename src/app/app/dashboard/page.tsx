@@ -9,6 +9,8 @@ import { BankedVsAtRiskCard } from "@/components/withdrawal/BankedVsAtRiskCard";
 import { DisciplineScoreCard } from "@/components/discipline/DisciplineScoreCard";
 import { MarketNowWidget } from "@/components/market/MarketNowWidget";
 import { DailyGoalTracker } from "@/components/goals/DailyGoalTracker";
+import { PayoutCalculator } from "@/components/trades/PayoutCalculator";
+import { RiskPositionSizer } from "@/components/trades/RiskPositionSizer";
 import { requireUser } from "@/server/lib/require-user";
 import { getActiveAccount, listUserAccounts } from "@/server/actions/active-account";
 import { getDashboardStats } from "@/server/lib/analytics";
@@ -201,6 +203,14 @@ export default async function DashboardPage() {
       <MarketNowWidget />
 
       <DailyGoalTracker goalAmount={100} currentAmount={Number((stats as any).todayPL?.toString() || 0) > 0 ? Number((stats as any).todayPL?.toString() || 0) : 0} />
+
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold">Quick Tools</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <PayoutCalculator />
+          <RiskPositionSizer />
+        </div>
+      </div>
 
       {/* Risk meter */}
       {riskProfile && (

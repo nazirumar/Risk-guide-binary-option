@@ -13,7 +13,8 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Star } from "lucide-react";
+import { Star, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { PairDetailDrawer } from "@/components/market/PairDetailDrawer";
@@ -223,7 +224,20 @@ export function MarketDashboard({
             <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
               {p.reasons[0] ?? "No summary available."}
             </p>
-            <p className="mt-1 text-[11px] text-muted-foreground/70">updated {ago(p.ageSeconds)}</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-[11px] text-muted-foreground/70">updated {ago(p.ageSeconds)}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.location.href = `/app/trades?asset=${p.symbol}`;
+                }}
+              >
+                Trade Now <ArrowRight className="ml-1 h-3 w-3" />
+              </Button>
+            </div>
           </article>
         ))}
 

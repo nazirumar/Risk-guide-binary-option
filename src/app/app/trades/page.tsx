@@ -12,6 +12,8 @@ import { AddTradeDialog } from "@/components/trades/AddTradeDialog";
 import { TradesTable } from "@/components/trades/TradesTable";
 import { PayoutCalculator } from "@/components/trades/PayoutCalculator";
 import { TradeSetupChecklist } from "@/components/trades/TradeSetupChecklist";
+import { RiskPositionSizer } from "@/components/trades/RiskPositionSizer";
+import { ExpirySuggestion } from "@/components/trades/ExpirySuggestion";
 
 export default async function TradesPage() {
   const { userId } = await requireUser();
@@ -114,6 +116,10 @@ export default async function TradesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <TradeSetupChecklist />
         <PayoutCalculator />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <RiskPositionSizer />
+        <ExpirySuggestion />
       </div>
 
       {/* Trades table with filters, bulk delete, inline edit, detail drawer. */}
