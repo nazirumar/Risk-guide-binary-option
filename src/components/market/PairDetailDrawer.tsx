@@ -10,6 +10,8 @@
  * value for this hour, and a link to the heatmap.
  */
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { ArrowRight } from "lucide-react";
 
 import {
   Sheet,
@@ -112,12 +114,18 @@ export function PairDetailDrawer({
               </section>
 
               <section>
-                <Link
-                  href="/app/market/heatmap"
-                  className="text-sm text-primary underline-offset-4 hover:underline"
-                >
-                  View volatility heatmap →
-                </Link>
+                <div className="flex gap-2 mt-4">
+                  <Link href={`/app/trades?asset=${pair.symbol}`}>
+                    <Button size="sm">
+                      Trade Now <ArrowRight className="ml-1 h-3 w-3" />
+                    </Button>
+                  </Link>
+                  <Link href="/app/market/heatmap">
+                    <Button size="sm" variant="outline">
+                      View volatility heatmap
+                    </Button>
+                  </Link>
+                </div>
               </section>
             </div>
           </>

@@ -560,6 +560,16 @@ export function AddTradeForm({
         </FormField>
       </div>
 
+      {preview && (
+        <div className="rounded-lg border bg-muted/30 p-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="font-medium">Risk/Reward Preview</span>
+          <div className="flex gap-4">
+            <span className="text-profit">If WIN: +{formatMoney(preview.profit, activeAccount?.currency || "USD")}</span>
+            <span className="text-loss">If LOSS: -{formatMoney(preview.loss, activeAccount?.currency || "USD")}</span>
+          </div>
+        </div>
+      )}
+
       {/* Row 3: Expiry + Strategy + Timeframe */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <FormField
