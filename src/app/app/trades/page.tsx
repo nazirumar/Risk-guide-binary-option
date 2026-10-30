@@ -19,10 +19,16 @@ import { RiskOfRuin } from "@/components/trades/RiskOfRuin";
 import { KellyCalculator } from "@/components/trades/KellyCalculator";
 import { CompoundingCalculator } from "@/components/trades/CompoundingCalculator";
 
-export default async function TradesPage() {
+export default async function TradesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ asset?: string; direction?: string }>;
+}) {
   const { userId } = await requireUser();
   const activeAccount = await getActiveAccount();
   const accounts = await listUserAccounts();
+  const params = await searchParams;
+  const prefillAsset = params?.asset;
   // Phase 20: fetch strategies with their live reliability verdicts so the
   // Add Trade form can show a "Likely losing" warning when the user picks
   // a strategy with that verdict.
@@ -60,7 +66,8 @@ export default async function TradesPage() {
           </p>
         </div>
         <AddTradeDialog
-          accounts={accounts.map((a) => ({
+          initialAsset={prefillAsset}
+          accounts={accounts.map((a) => ({ })
             id: a.id,
             name: a.name,
             broker: a.broker,
