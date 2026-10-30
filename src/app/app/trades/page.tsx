@@ -17,6 +17,7 @@ import { ExpirySuggestion } from "@/components/trades/ExpirySuggestion";
 import { WinRateNeeded } from "@/components/trades/WinRateNeeded";
 import { RiskOfRuin } from "@/components/trades/RiskOfRuin";
 import { KellyCalculator } from "@/components/trades/KellyCalculator";
+import { CompoundingCalculator } from "@/components/trades/CompoundingCalculator";
 
 export default async function TradesPage() {
   const { userId } = await requireUser();
@@ -120,12 +121,13 @@ export default async function TradesPage() {
         <TradeSetupChecklist />
         <PayoutCalculator />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <RiskPositionSizer />
         <ExpirySuggestion />
         <WinRateNeeded />
         <KellyCalculator />
         <RiskOfRuin />
+        <CompoundingCalculator />
       </div>
 
       {/* Trades table with filters, bulk delete, inline edit, detail drawer. */}
