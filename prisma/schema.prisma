@@ -206,13 +206,7 @@ model User {
   /// Phase 29: discipline weight (0-10) deducted when a trade is saved after
   /// ignoring an AVOID warning. 0 disables the deduction.
   avoidOverrideWeight       Int     @default(5)
-  /// Pre-trade checklist settings
-  checklistRequired         Boolean @default(false)
-  /// Daily goal settings
-  dailyGoalAmount           Decimal?
-  dailyGoalType             GoalType @default(DAILY)
-  /// Broker payout settings
-  defaultPayoutPercent      Decimal @default(0.85)
+
   /// Phase 18: tolerance (in percent, 0.5 = 0.5%) below which a balance check
   /// is automatically marked MATCHED instead of triggering an adjustment flow.
   balanceSyncTolerancePercent Decimal @default(0.5)
@@ -514,7 +508,6 @@ model Trade {
   followedPlan     Boolean        @default(true)
   screenshotUrl     String?
   tags              Json           @default("[]")
-  notes             String?
 
   // Phase 29 — market condition snapshot at trade time
   marketRating          String?
@@ -525,11 +518,6 @@ model Trade {
   /// Phase 29: the trader proceeded past the AVOID confirmation dialog
   /// (advisory warning — choice is logged and feeds the discipline score).
   ignoredAvoidWarning   Boolean    @default(false)
-  /// Pre-trade checklist completion
-  checklistCompleted    Boolean    @default(false)
-  /// Martingale/recovery tracking
-  isRecoveryTrade       Boolean    @default(false)
-  recoveryLevel         Int        @default(0)
 
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
