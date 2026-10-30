@@ -34,9 +34,11 @@ function ago(seconds: number): string {
 export function MarketDashboard({
   initial,
   initialFavorites,
+  tradeNowOnly = false,
 }: {
   initial: MarketSnapshot;
   initialFavorites: string[];
+  tradeNowOnly?: boolean;
 }) {
   const [snapshot, setSnapshot] = useState<MarketSnapshot>(initial);
   const [status, setStatus] = useState<"connecting" | "live" | "polling" | "error">("polling");
@@ -72,11 +74,20 @@ export function MarketDashboard({
 
   const pairs = useMemo(() => {
     let list = snapshot?.pairs ?? [];
+    if (tradeNowOnly) {
+      list = list.filter((p) => p.rating === "GOOD" && !p.marketClosed);
+      list = list.filter((p) => {
+        if (p.newsKnown && p.nextNewsMinutesTo != null && p.nextNewsMinutesTo <= 30) {
+          return false;
+        }
+        return true;
+      });
+    }
     if (goodOnly) list = list.filter((p) => p.rating === "GOOD");
     if (hideClosed) list = list.filter((p) => !p.marketClosed);
     if (favOnly) list = list.filter((p) => favorites.includes(p.instrumentId));
     return list;
-  }, [snapshot, goodOnly, hideClosed, favOnly, favorites]);
+  }, [snapshot, goodOnly, hideClosed, favOnly, favorites, tradeNowOnly]);
 
   async function onStar(instrumentId: string) {
     const wasFav = favorites.includes(instrumentId);

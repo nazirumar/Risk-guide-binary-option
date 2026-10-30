@@ -1,12 +1,14 @@
-import { requireUser } from "@/server/lib/require-user";
-import { getFavoriteInstrumentIds } from "@/server/lib/market-snapshot";
+"use client";
+
+import { useState } from "react";
 import { MarketDashboard } from "@/components/market/MarketDashboard";
 import { TradeNowFilter } from "@/components/market/TradeNowFilter";
 import { SessionIndicator } from "@/components/market/SessionIndicator";
+import { BestForSession } from "@/components/market/BestForSession";
 
-export default async function MarketPage() {
-  const user = await requireUser();
-  const favorites = await getFavoriteInstrumentIds(user.userId);
+export default function MarketPage() {
+  const [tradeNowOnly, setTradeNowOnly] = useState(false);
+  const favorites: string[] = [];
   const initial = {
     serverTime: new Date().toISOString(),
     isStale: true,
@@ -22,8 +24,9 @@ export default async function MarketPage() {
   return (
     <div className="space-y-4">
       <SessionIndicator />
-      <TradeNowFilter />
-      <MarketDashboard initial={initial} initialFavorites={favorites} />
+      <BestForSession />
+      <TradeNowFilter onFilterChange={(f) => setTradeNowOnly(f.tradeNowOnly)} />
+      <MarketDashboard initial={initial} initialFavorites={favorites} tradeNowOnly={tradeNowOnly} />
     </div>
   );
 }

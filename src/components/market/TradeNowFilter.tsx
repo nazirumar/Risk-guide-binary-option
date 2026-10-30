@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Filter } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
@@ -23,7 +22,7 @@ export function TradeNowFilter({
       <Filter className="h-4 w-4 text-muted-foreground" />
       <Checkbox id="trade-now" checked={tradeNowOnly} onCheckedChange={toggle} />
       <Label htmlFor="trade-now" className="text-sm cursor-pointer">
-        Trade Now Only (GOOD + in session + no imminent news)
+        Trade Now Only (GOOD + open market + no imminent news)
       </Label>
     </div>
   );
