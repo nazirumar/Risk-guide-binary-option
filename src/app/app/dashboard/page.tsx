@@ -13,6 +13,7 @@ import { MarketNowWidget } from "@/components/market/MarketNowWidget";
 import { DailyGoalTracker } from "@/components/goals/DailyGoalTracker";
 import { PayoutCalculator } from "@/components/trades/PayoutCalculator";
 import { RiskPositionSizer } from "@/components/trades/RiskPositionSizer";
+import { TradingStreak } from "@/components/dashboard/TradingStreak";
 import { requireUser } from "@/server/lib/require-user";
 import { getActiveAccount, listUserAccounts } from "@/server/actions/active-account";
 import { getDashboardStats } from "@/server/lib/analytics";
@@ -221,6 +222,10 @@ export default async function DashboardPage() {
       <MarketNowWidget />
 
       <DailyGoalTracker goalAmount={100} currentAmount={Number((stats as any).todayPL?.toString() || 0) > 0 ? Number((stats as any).todayPL?.toString() || 0) : 0} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <TradingStreak currentStreak={currentLossStreak === 0 ? 0 : 0} bestStreak={0} />
+      </div>
 
       <div className="space-y-2">
         <h2 className="text-lg font-semibold">Quick Tools</h2>
