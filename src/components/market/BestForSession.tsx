@@ -5,7 +5,7 @@ import { Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { classifyTradeBySession } from "@/lib/news/sessions";
-import { SESSION_FOCUS_PAIRS } from "@/lib/market/session-recommendations";
+import { SESSION_INFO } from "@/lib/market/session-recommendations";
 
 const SESSION_LABELS: Record<string, string> = {
   ASIAN: "Asian Session",
@@ -22,7 +22,7 @@ export function BestForSession() {
   useEffect(() => {
     const s = classifyTradeBySession(new Date());
     setSession(s);
-    setPairs(SESSION_FOCUS_PAIRS[s] || []);
+    setPairs((SESSION_INFO as any)[s]?.focus || []);
   }, []);
 
   if (pairs.length === 0) return null;
