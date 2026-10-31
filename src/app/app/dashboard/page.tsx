@@ -104,12 +104,20 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          {activeAccount.name} ({activeAccount.broker}) · {activeAccount.currency}
-          {activeLockout && <span className="ml-2 text-warning font-medium">· Trading locked</span>}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            {activeAccount.name} ({activeAccount.broker}) · {activeAccount.currency}
+            {activeLockout && <span className="ml-2 text-warning font-medium">· Trading locked</span>}
+          </p>
+        </div>
+        <Link href="/app/trades">
+          <Button size="sm">
+            <Plus className="mr-2 h-4 w-4" />
+            New Trade
+          </Button>
+        </Link>
       </div>
 
       {/* Phase 18 — daily broker-balance reminder banner (client-rendered to
