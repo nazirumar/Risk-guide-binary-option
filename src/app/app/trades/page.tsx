@@ -67,7 +67,7 @@ export default async function TradesPage({
         </div>
         <AddTradeDialog
           initialAsset={prefillAsset}
-          accounts={accounts.map((a) => ({ })
+          accounts={accounts.map((a) => ({
             id: a.id,
             name: a.name,
             broker: a.broker,
