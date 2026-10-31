@@ -34,6 +34,7 @@ import {
 } from "@/lib/validation";
 import { recomputeAccountBalanceInTx } from "@/server/actions/accounts";
 import { getTradeMarketSnapshot } from "@/server/lib/trade-market";
+import { sendTelegramAlertAction } from "@/server/actions/telegram";
 
 export type TradeActionResult = {
   ok: boolean;
@@ -313,6 +314,15 @@ export async function createTradeAction(formData: FormData): Promise<TradeAction
   revalidatePath("/app/trades");
   revalidatePath(`/app/accounts/${parsed.data.tradingAccountId}`);
   revalidatePath("/app/dashboard");
+
+  try {
+    void sendTelegramAlertAction(
+      userId,
+      "TRADE_ADDED",
+      "Trade logged",
+      `<b>Trade Added</b>\n\nAsset: ${trade.trade.asset}\nDirection: ${trade.trade.direction}\nStake: ${trade.trade.stake.toString()}\nPayout: ${(Number(trade.trade.payoutPercent) * 100).toFixed(0)}%\nExpiry: ${trade.trade.expiryMinutes}m`,
+    );
+  } catch {}
 
   return {
     ok: true,

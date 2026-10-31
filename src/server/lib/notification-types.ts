@@ -27,6 +27,7 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   // Phase 28 — Live market conditions. OFF by default (spec: "optional alerts …
   // off by default"); the worker only notifies users who opt in AND favor a pair.
   MARKET_CONDITION_CHANGED: { inApp: false, email: false, telegram: false },
+  TRADE_ADDED: { inApp: false, email: false, telegram: true },
 };
 
 /**
@@ -42,6 +43,7 @@ export const TELEGRAM_ALERT_TYPES = [
   "WITHDRAWAL_DUE",
   "GOAL_ACHIEVED",
   "DAILY_SUMMARY",
+  "TRADE_ADDED",
 ] as const;
 
 export type TelegramAlertType = (typeof TELEGRAM_ALERT_TYPES)[number];
