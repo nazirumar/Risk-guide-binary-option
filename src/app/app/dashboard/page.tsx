@@ -23,7 +23,6 @@ import { formatMoney, formatPercent, formatDate } from "@/lib/format";
 import { startOfTodayUtc } from "@/lib/timezone";
 import Decimal from "decimal.js";
 import { MoneyText } from "@/components/trader/MoneyText";
-import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default async function DashboardPage() {
