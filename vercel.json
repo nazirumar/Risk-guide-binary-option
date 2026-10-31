@@ -1,8 +1,3 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/telegram-daily-summary",
-      "schedule": "*/15 * * * *"
-    }
-  ]
+  "crons": []
 }
