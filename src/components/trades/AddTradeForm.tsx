@@ -538,6 +538,21 @@ export function AddTradeForm({
             suggestion={nextStakeSuggestion ?? null}
             onApply={(stake) => set("stake", stake)}
           />
+          {activeAccount && balance > 0 && (
+            <div className="flex gap-1 mt-1 flex-wrap">
+              {[1, 2, 3, 5].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => set("stake", (balance * (pct / 100)).toFixed(2))}
+                  disabled={pending}
+                  className="text-xs px-2 py-0.5 rounded border border-input hover:bg-accent"
+                >
+                  {pct}% (${(balance * (pct / 100)).toFixed(2)})
+                </button>
+              ))}
+            </div>
+          )}
         </FormField>
         <FormField
           label="Payout %"

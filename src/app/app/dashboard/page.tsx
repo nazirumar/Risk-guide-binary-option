@@ -1,4 +1,6 @@
-import { TrendingUp, BookOpen, Wallet, BarChart3, TrendingDown, ShieldX } from "lucide-react";
+import { TrendingUp, BookOpen, Wallet, BarChart3, TrendingDown, ShieldX, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { StatCard } from "@/components/trader/StatCard";
 import { EmptyState } from "@/components/trader/EmptyState";
 import { RiskMeter } from "@/components/risk/RiskMeter";
@@ -31,7 +33,15 @@ export default async function DashboardPage() {
   if (!activeAccount) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <Link href="/app/trades">
+            <Button size="sm">
+              <Plus className="mr-2 h-4 w-4" />
+              New Trade
+            </Button>
+          </Link>
+        </div>
         <EmptyState
           icon={Wallet}
           title="No trading account yet"
