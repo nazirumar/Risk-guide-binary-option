@@ -38,12 +38,14 @@ export function AddTradeDialog({
   activeAccountId,
   strategies,
   nextStakeSuggestion,
+  initialAsset,
   children,
 }: {
   accounts: AccountLite[];
   activeAccountId: string | null;
   strategies: StrategyLite[];
   nextStakeSuggestion?: NextStakeSuggestion | null;
+  initialAsset?: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -69,6 +71,7 @@ export function AddTradeDialog({
           activeAccountId={activeAccountId}
           strategies={strategies}
           nextStakeSuggestion={nextStakeSuggestion}
+          initialAsset={initialAsset}
         />
       </DialogContent>
     </Dialog>

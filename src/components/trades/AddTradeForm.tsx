@@ -82,6 +82,7 @@ export function AddTradeForm({
   activeAccountId,
   strategies,
   nextStakeSuggestion,
+  initialAsset,
 }: {
   accounts: AccountLite[];
   activeAccountId: string | null;
@@ -91,10 +92,11 @@ export function AddTradeForm({
     planName: string;
     clamped: boolean;
   } | null;
+  initialAsset?: string;
 }) {
   const [form, setForm] = useState({
     tradingAccountId: activeAccountId ?? accounts[0]?.id ?? "",
-    asset: "EUR/USD",
+    asset: initialAsset || "EUR/USD",
     direction: "CALL" as "CALL" | "PUT",
     stake: "",
     payoutPercent: "0.85",
@@ -538,17 +540,17 @@ export function AddTradeForm({
             suggestion={nextStakeSuggestion ?? null}
             onApply={(stake) => set("stake", stake)}
           />
-          {activeAccount && balance > 0 && (
+          {activeAccount && balance.gt(0) && (
             <div className="flex gap-1 mt-1 flex-wrap">
               {[1, 2, 3, 5].map((pct) => (
                 <button
                   key={pct}
                   type="button"
-                  onClick={() => set("stake", (balance * (pct / 100)).toFixed(2))}
+                  onClick={() => set("stake", balance.times(pct / 100).toFixed(2))}
                   disabled={pending}
                   className="text-xs px-2 py-0.5 rounded border border-input hover:bg-accent"
                 >
-                  {pct}% (${(balance * (pct / 100)).toFixed(2)})
+                  {pct}% (${balance.times(pct / 100).toFixed(2)})
                 </button>
               ))}
             </div>

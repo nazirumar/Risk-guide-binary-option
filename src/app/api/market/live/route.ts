@@ -77,8 +77,8 @@ export async function GET() {
                 low: c.low,
                 close: c.close,
                 volume: c.volume ?? 0,
-                bid: c.bid,
-                ask: c.ask,
+                bid: c.bid ?? null,
+                ask: c.ask ?? null,
               }));
               lastSuccessAt = new Date();
             }
@@ -97,8 +97,8 @@ export async function GET() {
                 low: c.low,
                 close: c.close,
                 volume: c.volume ?? 0,
-                bid: c.bid,
-                ask: c.ask,
+                bid: c.bid ?? null,
+                ask: c.ask ?? null,
               }));
               lastSuccessAt = new Date();
             }

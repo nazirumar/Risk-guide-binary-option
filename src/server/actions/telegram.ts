@@ -343,13 +343,6 @@ export async function handleTelegramWebhookAction(
       }
       return { ok: true, message: "Unknown command ignored." };
     }
-    default: {
-      // Unknown command — friendly nudge toward /help.
-      if (command.raw.startsWith("/")) {
-        await provider.sendMessage(chatId, `Unknown command. Send /help to see what I can do.`);
-      }
-      return { ok: true, message: "Unknown command ignored." };
-    }
   }
 }
 
