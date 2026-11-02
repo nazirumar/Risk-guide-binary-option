@@ -3,9 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, ShieldCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/brand/Logo";
 import { NAV_ITEMS } from "./nav-items";
 
 /**
@@ -31,9 +32,7 @@ export function Sidebar() {
         href="/app/dashboard"
         className="flex items-center gap-2 h-14 px-4 border-b border-sidebar-border hover:bg-sidebar-accent transition-colors"
       >
-        <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-          <ShieldCheck className="size-5 text-primary" aria-hidden="true" />
-        </div>
+        <Logo className="size-8 shrink-0" />
         {!collapsed && <span className="text-base font-bold tracking-tight">RiskGuard</span>}
       </Link>
 

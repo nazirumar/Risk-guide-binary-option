@@ -4,7 +4,8 @@
  * disclaimer (PROJECT_RULES.md rule #11) and a centered card for the page body.
  */
 import Link from "next/link";
-import { ShieldCheck, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
+import { Logo } from "@/components/brand/Logo";
 
 export function AuthShell({
   title,
@@ -23,9 +24,7 @@ export function AuthShell({
         <div className="w-full max-w-md">
           <div className="flex flex-col items-center gap-3 mb-8 text-center">
             <Link href="/" className="inline-flex items-center gap-2 hover:opacity-80">
-              <div className="size-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                <ShieldCheck className="size-5 text-primary" aria-hidden="true" />
-              </div>
+              <Logo className="size-9" />
               <span className="text-xl font-bold tracking-tight">RiskGuard</span>
             </Link>
             <h1 className="text-2xl font-semibold tracking-tight mt-2">{title}</h1>

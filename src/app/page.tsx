@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { ShieldCheck, TrendingUp, AlertTriangle, Lock, BookOpen, BarChart3 } from "lucide-react";
 import { authOptions } from "@/lib/auth";
+import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -23,9 +24,7 @@ export default async function Home() {
       <section className="flex-1 flex flex-col items-center justify-center px-6 py-16">
         <div className="max-w-3xl w-full flex flex-col items-center text-center gap-6">
           <div className="flex items-center gap-3">
-            <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center">
-              <ShieldCheck className="size-7 text-primary" aria-hidden="true" />
-            </div>
+            <Logo className="size-12" />
             <span className="text-2xl font-bold tracking-tight">RiskGuard</span>
           </div>
 

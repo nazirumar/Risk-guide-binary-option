@@ -76,5 +76,7 @@ export default withAuth(
 
 // Skip middleware for static assets and NextAuth internals.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo.svg|robots.txt|api/auth).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|icon-192.png|icon-512.png|logo.svg|manifest.json|robots.txt|api/auth).*)",
+  ],
 };

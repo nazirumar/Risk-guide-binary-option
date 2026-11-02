@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
+import { Logo } from "@/components/brand/Logo";
 
 export const metadata = {
   title: "RiskGuard — Offline",
@@ -9,9 +9,7 @@ export const metadata = {
 export default function OfflinePage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-background text-foreground">
-      <div className="size-16 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
-        <ShieldCheck className="size-8 text-primary" aria-hidden="true" />
-      </div>
+      <Logo className="size-16 mb-4" />
       <h1 className="text-2xl font-bold tracking-tight">You&apos;re offline</h1>
       <p className="text-sm text-muted-foreground mt-2 max-w-sm text-center">
         RiskGuard can&apos;t reach the server. Your trades, balances, and risk rules are safe —

@@ -30,7 +30,11 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "RiskGuard" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "48x48" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
   manifest: "/manifest.json",
   themeColor: "#0f172a",
@@ -39,11 +43,13 @@ export const metadata: Metadata = {
     description: "Money & risk management for binary options traders",
     siteName: "RiskGuard",
     type: "website",
+    images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "RiskGuard" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "RiskGuard",
     description: "Money & risk management for binary options traders",
+    images: ["/icon-512.png"],
   },
 };
 
