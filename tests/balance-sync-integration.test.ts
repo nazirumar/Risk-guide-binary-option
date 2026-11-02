@@ -219,6 +219,7 @@ describe("Phase 18 — BalanceCheck create + tolerance", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`bs+${Date.now()}@example.com`);
@@ -270,6 +271,7 @@ describe("Phase 18 — ADJUSTED resolution reuses Phase 4 reconcile logic", () =
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`bsadj+${Date.now()}@example.com`);
@@ -349,6 +351,7 @@ describe("Phase 18 — IGNORED resolution + cross-user isolation", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const uA = await makeUser(`a+${Date.now()}@example.com`);
@@ -425,6 +428,7 @@ describe("Phase 18 — accuracy score + atomicity", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`ac+${Date.now()}@example.com`);

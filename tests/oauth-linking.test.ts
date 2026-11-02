@@ -204,6 +204,7 @@ beforeEach(async () => {
   await prisma.auditLog.deleteMany();
   await prisma.account.deleteMany();
   await prisma.tradingAccount.deleteMany();
+  await prisma.subscription.deleteMany();
   await prisma.user.deleteMany();
 });
 

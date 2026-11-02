@@ -56,7 +56,6 @@ export function LockoutBanner({ lockout }: { lockout: ActiveLockout | null }) {
     // initial render must match the server (now=0) to avoid hydration
     // mismatch. The lint rule warns about cascading renders, but this is a
     // one-time initialization that's necessary for SSR time-dependent UI.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);

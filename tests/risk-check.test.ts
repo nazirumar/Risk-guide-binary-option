@@ -129,6 +129,7 @@ describe("Phase 7 — evaluateRisk rules", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`test+${Date.now()}@example.com`);
@@ -425,6 +426,7 @@ describe("Phase 7 — evaluateRisk timezone edge cases", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
   });
 

@@ -143,6 +143,7 @@ describe("Phase 21 — DailyScore upsert + per-rule deductions", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`ds+${Date.now()}@example.com`);
@@ -266,6 +267,7 @@ describe("Phase 21 — cron sweep computes yesterday for multiple users", () => 
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const uA = await makeUser(`a+${Date.now()}@example.com`);
@@ -371,6 +373,7 @@ describe("Phase 21 — cross-user isolation", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const uA = await makeUser(`a+${Date.now()}@example.com`);
@@ -426,6 +429,7 @@ describe("Phase 21 — streak transition with DB rows", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`st+${Date.now()}@example.com`);

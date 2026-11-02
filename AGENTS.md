@@ -10,7 +10,7 @@
 ## Commands (package.json)
 
 - **Dev**: `bun run dev` (port 3000)
-- **Build**: `bun run build` — runs `next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/` (required for standalone output)
+- **Build**: `bun run build` — runs `prisma generate && next build && node scripts/copy-standalone.mjs` (copies `static` + `public` into `.next/standalone/`; cross-platform replacement for the old `cp -r` step)
 - **Start (prod)**: `NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log` (Docker uses `npx prisma migrate deploy && node server.js`)
 - **Lint/Format/Typecheck**: `bun run lint`, `bun run lint:fix`, `bun run format`, `bun run format:check`, `bun run typecheck` (`tsc --noEmit`)
 - **Tests**: `bun run test` (Vitest), `bun run test:watch`, `bun run test:coverage`. E2E: `bun run test:e2e`, `bun run test:e2e:ui` (Playwright)

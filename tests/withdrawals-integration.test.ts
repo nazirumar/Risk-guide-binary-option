@@ -203,6 +203,7 @@ describe("Phase 19 — rule create + HWM seeding", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`wr+${Date.now()}@example.com`);
@@ -260,6 +261,7 @@ describe("Phase 19 — status: profit + recommended + due", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`wr+${Date.now()}@example.com`);
@@ -416,6 +418,7 @@ describe("Phase 19 — markWithdrawn atomicity + balance recompute", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`wra+${Date.now()}@example.com`);
@@ -510,6 +513,7 @@ describe("Phase 19 — mid-period rule change resets lastTriggeredAt", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`wrmp+${Date.now()}@example.com`);
@@ -582,6 +586,7 @@ describe("Phase 19 — cross-user isolation", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const uA = await makeUser(`a+${Date.now()}@example.com`);
@@ -666,6 +671,7 @@ describe("Phase 19 — bankedVsAtRisk aggregation", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`bv+${Date.now()}@example.com`);

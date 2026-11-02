@@ -61,14 +61,14 @@ async function makeAccount(userId: string, name: string, start: string) {
   });
 }
 
-async function makeClosedTrade(
+function closedTradeRow(
   userId: string,
   tradingAccountId: string,
   strategyId: string,
   result: "WIN" | "LOSS" | "TIE",
   payoutPercent: number,
   stake: string,
-): Promise<void> {
+) {
   const stakeDecimal = new Decimal(stake);
   let pl: Decimal;
   switch (result) {
@@ -82,22 +82,55 @@ async function makeClosedTrade(
       pl = new Decimal(0);
       break;
   }
+  return {
+    userId,
+    tradingAccountId,
+    strategyId,
+    asset: "EUR/USD",
+    direction: "CALL" as const,
+    stake: stakeDecimal,
+    payoutPercent: new Decimal(payoutPercent),
+    expiryMinutes: 5,
+    openedAt: new Date(),
+    closedAt: new Date(),
+    result,
+    profitLoss: pl,
+    balanceAfter: pl, // ignored by the test; not used by validation calc
+  };
+}
+
+async function makeClosedTrade(
+  userId: string,
+  tradingAccountId: string,
+  strategyId: string,
+  result: "WIN" | "LOSS" | "TIE",
+  payoutPercent: number,
+  stake: string,
+): Promise<void> {
   await prisma.trade.create({
-    data: {
-      userId,
-      tradingAccountId,
-      strategyId,
-      asset: "EUR/USD",
-      direction: "CALL",
-      stake: stakeDecimal,
-      payoutPercent: new Decimal(payoutPercent),
-      expiryMinutes: 5,
-      openedAt: new Date(),
-      closedAt: new Date(),
-      result,
-      profitLoss: pl,
-      balanceAfter: pl, // ignored by the test; not used by validation calc
-    },
+    data: closedTradeRow(userId, tradingAccountId, strategyId, result, payoutPercent, stake),
+  });
+}
+
+/**
+ * Batched insert — one network round-trip instead of N. The test database is
+ * a remote Neon Postgres, so sequential per-row inserts blow the test timeout
+ * on the large loops (100–300 trades).
+ */
+async function makeClosedTrades(
+  count: number,
+  userId: string,
+  tradingAccountId: string,
+  strategyId: string,
+  result: "WIN" | "LOSS" | "TIE",
+  payoutPercent: number,
+  stake: string,
+): Promise<void> {
+  if (count <= 0) return;
+  await prisma.trade.createMany({
+    data: Array.from({ length: count }, () =>
+      closedTradeRow(userId, tradingAccountId, strategyId, result, payoutPercent, stake),
+    ),
   });
 }
 
@@ -128,6 +161,7 @@ describe("Phase 20 — Strategy create + verdict transition", () => {
     await prisma.strategy.deleteMany();
     await prisma.transaction.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`sv+${Date.now()}@example.com`);
@@ -149,12 +183,8 @@ describe("Phase 20 — Strategy create + verdict transition", () => {
   });
 
   it("8/10 wins → still INSUFFICIENT (total < 30)", async () => {
-    for (let i = 0; i < 8; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "WIN", 0.85, "10");
-    }
-    for (let i = 0; i < 2; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "LOSS", 0.85, "10");
-    }
+    await makeClosedTrades(8, userId, accountId, strategyId, "WIN", 0.85, "10");
+    await makeClosedTrades(2, userId, accountId, strategyId, "LOSS", 0.85, "10");
     const trades = await prisma.trade.findMany({
       where: { strategyId },
       select: { result: true, payoutPercent: true },
@@ -167,12 +197,8 @@ describe("Phase 20 — Strategy create + verdict transition", () => {
   });
 
   it("25/30 wins (0.85 payout) → LOW + Likely profitable", async () => {
-    for (let i = 0; i < 25; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "WIN", 0.85, "10");
-    }
-    for (let i = 0; i < 5; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "LOSS", 0.85, "10");
-    }
+    await makeClosedTrades(25, userId, accountId, strategyId, "WIN", 0.85, "10");
+    await makeClosedTrades(5, userId, accountId, strategyId, "LOSS", 0.85, "10");
     const trades = await prisma.trade.findMany({
       where: { strategyId },
       select: { result: true, payoutPercent: true },
@@ -186,12 +212,8 @@ describe("Phase 20 — Strategy create + verdict transition", () => {
   });
 
   it("3/30 wins (0.85 payout) → LOW + Likely losing", async () => {
-    for (let i = 0; i < 3; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "WIN", 0.85, "10");
-    }
-    for (let i = 0; i < 27; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "LOSS", 0.85, "10");
-    }
+    await makeClosedTrades(3, userId, accountId, strategyId, "WIN", 0.85, "10");
+    await makeClosedTrades(27, userId, accountId, strategyId, "LOSS", 0.85, "10");
     const trades = await prisma.trade.findMany({
       where: { strategyId },
       select: { result: true, payoutPercent: true },
@@ -203,12 +225,8 @@ describe("Phase 20 — Strategy create + verdict transition", () => {
   });
 
   it("16/30 wins (0.85 payout) → LOW + Can't tell yet (Wilson straddles break-even)", async () => {
-    for (let i = 0; i < 16; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "WIN", 0.85, "10");
-    }
-    for (let i = 0; i < 14; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "LOSS", 0.85, "10");
-    }
+    await makeClosedTrades(16, userId, accountId, strategyId, "WIN", 0.85, "10");
+    await makeClosedTrades(14, userId, accountId, strategyId, "LOSS", 0.85, "10");
     const trades = await prisma.trade.findMany({
       where: { strategyId },
       select: { result: true, payoutPercent: true },
@@ -219,12 +237,8 @@ describe("Phase 20 — Strategy create + verdict transition", () => {
   });
 
   it("70/100 wins (0.85 payout) → MEDIUM + Likely profitable", async () => {
-    for (let i = 0; i < 70; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "WIN", 0.85, "10");
-    }
-    for (let i = 0; i < 30; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "LOSS", 0.85, "10");
-    }
+    await makeClosedTrades(70, userId, accountId, strategyId, "WIN", 0.85, "10");
+    await makeClosedTrades(30, userId, accountId, strategyId, "LOSS", 0.85, "10");
     const trades = await prisma.trade.findMany({
       where: { strategyId },
       select: { result: true, payoutPercent: true },
@@ -235,12 +249,8 @@ describe("Phase 20 — Strategy create + verdict transition", () => {
   });
 
   it("20/100 wins (0.85 payout) → MEDIUM + Likely losing", async () => {
-    for (let i = 0; i < 20; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "WIN", 0.85, "10");
-    }
-    for (let i = 0; i < 80; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "LOSS", 0.85, "10");
-    }
+    await makeClosedTrades(20, userId, accountId, strategyId, "WIN", 0.85, "10");
+    await makeClosedTrades(80, userId, accountId, strategyId, "LOSS", 0.85, "10");
     const trades = await prisma.trade.findMany({
       where: { strategyId },
       select: { result: true, payoutPercent: true },
@@ -251,12 +261,8 @@ describe("Phase 20 — Strategy create + verdict transition", () => {
   });
 
   it("60/100 wins (0.85 payout) → MEDIUM + Can't tell yet (z-test agrees)", async () => {
-    for (let i = 0; i < 60; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "WIN", 0.85, "10");
-    }
-    for (let i = 0; i < 40; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "LOSS", 0.85, "10");
-    }
+    await makeClosedTrades(60, userId, accountId, strategyId, "WIN", 0.85, "10");
+    await makeClosedTrades(40, userId, accountId, strategyId, "LOSS", 0.85, "10");
     const trades = await prisma.trade.findMany({
       where: { strategyId },
       select: { result: true, payoutPercent: true },
@@ -271,12 +277,8 @@ describe("Phase 20 — Strategy create + verdict transition", () => {
   });
 
   it("250/300 wins (0.85 payout) → HIGH + Likely profitable", async () => {
-    for (let i = 0; i < 250; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "WIN", 0.85, "10");
-    }
-    for (let i = 0; i < 50; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "LOSS", 0.85, "10");
-    }
+    await makeClosedTrades(250, userId, accountId, strategyId, "WIN", 0.85, "10");
+    await makeClosedTrades(50, userId, accountId, strategyId, "LOSS", 0.85, "10");
     const trades = await prisma.trade.findMany({
       where: { strategyId },
       select: { result: true, payoutPercent: true },
@@ -298,6 +300,7 @@ describe("Phase 20 — recomputeStrategyStatsAction persistence", () => {
     await prisma.strategy.deleteMany();
     await prisma.transaction.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`sr+${Date.now()}@example.com`);
@@ -309,12 +312,8 @@ describe("Phase 20 — recomputeStrategyStatsAction persistence", () => {
     });
     strategyId = s.id;
     // 70 wins / 100 total at 0.85 payout → MEDIUM + Likely profitable.
-    for (let i = 0; i < 70; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "WIN", 0.85, "10");
-    }
-    for (let i = 0; i < 30; i++) {
-      await makeClosedTrade(userId, accountId, strategyId, "LOSS", 0.85, "10");
-    }
+    await makeClosedTrades(70, userId, accountId, strategyId, "WIN", 0.85, "10");
+    await makeClosedTrades(30, userId, accountId, strategyId, "LOSS", 0.85, "10");
   });
 
   it("recomputes cached stats + sets isValidated=true when verdict is Likely profitable", async () => {
@@ -380,6 +379,7 @@ describe("Phase 20 — cross-user isolation + delete strategy", () => {
     await prisma.strategy.deleteMany();
     await prisma.transaction.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const uA = await makeUser(`a+${Date.now()}@example.com`);

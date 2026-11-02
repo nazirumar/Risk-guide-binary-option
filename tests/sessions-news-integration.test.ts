@@ -112,6 +112,7 @@ describe("Phase 22 — session classification with real DB trades", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`sn+${Date.now()}@example.com`);
@@ -249,6 +250,7 @@ describe("Phase 22 — NewsEvent upsert + warning logic", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`nw+${Date.now()}@example.com`);
@@ -413,6 +415,7 @@ describe("Phase 22 — provider failure doesn't break the app", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`pf+${Date.now()}@example.com`);
@@ -485,6 +488,7 @@ describe("Phase 22 — near-news vs away-from-news stats", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`ns+${Date.now()}@example.com`);

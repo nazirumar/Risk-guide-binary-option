@@ -22,6 +22,10 @@ const eslintConfig = [
       // React rules
       "react-hooks/exhaustive-deps": "off",
       "react-hooks/purity": "off",
+      // Intentional setState-in-effect patterns: SSR hydration init
+      // (LockoutBanner clock, BestForSession session classification) must
+      // set state once after mount — disabling avoids flaky Compiler reports.
+      "react-hooks/set-state-in-effect": "off",
       "react/no-unescaped-entities": "off",
       "react/display-name": "off",
       "react/prop-types": "off",

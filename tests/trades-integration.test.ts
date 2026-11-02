@@ -148,6 +148,7 @@ describe("Phase 5 — trade open/close/edit/delete keeps balance consistent", ()
     await prisma.trade.deleteMany();
     await prisma.transaction.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`test+${Date.now()}@example.com`);

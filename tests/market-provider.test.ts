@@ -99,12 +99,7 @@ describe("DerivProvider", () => {
     MockWebSocket.onSend = (_url, payload, socket) => socket.respond(candlesReply(payload));
 
     const p = new DerivProvider();
-    await p.getCandles(
-      "GBP_JPY",
-      "M1",
-      new Date(Date.now() - 5 * 60 * 1000),
-      new Date(),
-    );
+    await p.getCandles("GBP_JPY", "M1", new Date(Date.now() - 5 * 60 * 1000), new Date());
 
     const sent = MockWebSocket.instances[0].sent;
     expect(sent.length).toBeGreaterThan(0);
@@ -158,16 +153,16 @@ describe("DerivProvider", () => {
       new Date((base + 600) * 1000),
     );
 
-    expect(candles.map((c) => c.time.getTime())).toEqual([
-      base * 1000,
-      (base + 300) * 1000,
-    ]);
+    expect(candles.map((c) => c.time.getTime())).toEqual([base * 1000, (base + 300) * 1000]);
   });
 
   it("falls back to the app-id endpoint when the primary is unreachable", async () => {
+    // The request window is "the last 10 minutes", so the reply candle must
+    // land inside it — the fixed CANDLE epoch (2023) would be filtered out.
+    const recentEpoch = Math.floor((Date.now() - 5 * 60 * 1000) / 1000);
     MockWebSocket.onSend = (url, payload, socket) => {
       if (url.includes("api.derivws.com")) socket.fail();
-      else socket.respond(candlesReply(payload));
+      else socket.respond(candlesReply(payload, [{ ...CANDLE, epoch: recentEpoch }]));
     };
 
     const p = new DerivProvider("1000");

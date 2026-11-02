@@ -154,6 +154,7 @@ describe("Phase 23 — link flow (generate code → /start CODE → linked)", ()
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`tg+${Date.now()}@example.com`);
@@ -338,6 +339,7 @@ describe("Phase 23 — alerts respect toggles", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`tgalt+${Date.now()}@example.com`);
@@ -430,6 +432,7 @@ describe("Phase 23 — weekly review generates from seeded data", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`wr+${Date.now()}@example.com`);
@@ -670,6 +673,7 @@ describe("Phase 23 — cross-user isolation", () => {
     await prisma.transaction.deleteMany();
     await prisma.riskProfile.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const uA = await makeUser(`a+${Date.now()}@example.com`);

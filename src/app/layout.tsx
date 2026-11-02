@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://risk-guide-binary-option.vercel.app"),
   title: "RiskGuard — Money Management for Binary Options Traders",
   description:
     "RiskGuard is a discipline-first money & risk management app for binary options traders. Track trades, enforce daily limits, visualize equity, and stay in control.",
@@ -37,7 +38,6 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
   manifest: "/manifest.json",
-  themeColor: "#0f172a",
   openGraph: {
     title: "RiskGuard",
     description: "Money & risk management for binary options traders",
@@ -51,6 +51,11 @@ export const metadata: Metadata = {
     description: "Money & risk management for binary options traders",
     images: ["/icon-512.png"],
   },
+};
+
+// themeColor must live in viewport (not metadata) since Next.js 15+.
+export const viewport = {
+  themeColor: "#0f172a",
 };
 
 export default function RootLayout({

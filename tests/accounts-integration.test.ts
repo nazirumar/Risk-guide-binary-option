@@ -110,6 +110,7 @@ describe("Phase 4 — atomic balance recompute", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const u = await makeUser(`test+${Date.now()}@example.com`);
@@ -218,6 +219,7 @@ describe("Phase 4 — cross-user isolation", () => {
     await prisma.transaction.deleteMany();
     await prisma.trade.deleteMany();
     await prisma.tradingAccount.deleteMany();
+    await prisma.subscription.deleteMany();
     await prisma.user.deleteMany();
 
     const uA = await makeUser(`a+${Date.now()}@example.com`);
