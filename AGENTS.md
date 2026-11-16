@@ -60,7 +60,7 @@ Run in order when validating changes: `lint` → `typecheck` → `test` (and `bu
 ## Phase Status
 
 - All phases 0–29 are complete except **Phase 25 (Google OAuth & account linking)**, which is `[ ]` in `PROGRESS.md`.
-- Revised re-run of phases 26–29 (against the revised spec: no OANDA, Deriv public no-auth WebSocket + TwelveData fallback) is also `[ ]`.
+- Revised re-run of phases 26–29 (against the revised spec: no OANDA, Deriv public no-auth WebSocket + Dukascopy backfill + optional TwelveData fallback) is also `[ ]`. Current phase is 26 (revised) — see `PROGRESS.md` for the authoritative tracker; pick up at the first unchecked phase and never redo finished ones.
 - Do not start the next phase until explicitly told. Run `lint` → `typecheck` → `test` → `build` before considering a phase done.
 
 ## Structure (key)
