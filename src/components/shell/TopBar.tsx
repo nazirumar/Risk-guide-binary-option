@@ -222,9 +222,13 @@ export function TopBar({
       >
         <DrawerContent
           className={cn(
-            // vaul defaults to max-h-[80vh]; on short mobile screens that
-            // clips the list. Let the content grow and scroll instead.
-            "max-h-[95vh] h-auto flex flex-col",
+            // drawer.tsx caps bottom drawers at max-h-[80vh] via a
+            // data-[vaul-drawer-direction=bottom] variant, which is
+            // higher-specificity than a plain max-h-* override — repeat the
+            // same variant here or the taller cap silently won't apply.
+            // 95dvh (not vh) accounts for mobile browser dynamic toolbars.
+            "h-auto flex flex-col",
+            "data-[vaul-drawer-direction=bottom]:max-h-[95dvh]",
           )}
         >
           <DrawerHeader className="flex flex-row items-center justify-between">
@@ -235,38 +239,40 @@ export function TopBar({
               </Button>
             </DrawerClose>
           </DrawerHeader>
-          <nav className="px-2 flex-1 min-h-0" aria-label="Mobile navigation">
-            <div className="h-full overflow-y-auto">
-              <ul className="flex flex-col gap-0.5">
-                {NAV_ITEMS.map((item) => {
-                  const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                  const Icon = item.icon;
-                  return (
-                    <li key={item.href}>
-                      <DrawerClose asChild>
-                        <Link
-                          href={item.href}
-                          aria-current={active ? "page" : undefined}
-                          className={cn(
-                            "flex items-center gap-3 h-11 rounded-md px-3 text-sm font-medium transition-colors",
-                            active
-                              ? "bg-accent text-accent-foreground"
-                              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                          )}
-                        >
-                          <Icon className="size-5 shrink-0" aria-hidden="true" />
-                          <span>{item.label}</span>
-                        </Link>
-                      </DrawerClose>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+          {/* The nav itself is the scroll container: a flex-1 min-h-0 item
+              with overflow-y-auto is height-capped by the flex layout, while
+              a nested div with h-full is NOT — percentage heights don't
+              resolve against a flex item in an auto-height (max-h) column,
+              which made the whole list unscrollable. */}
+          <nav className="px-2 flex-1 min-h-0 overflow-y-auto pb-2" aria-label="Mobile navigation">
+            <ul className="flex flex-col gap-0.5">
+              {NAV_ITEMS.map((item) => {
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const Icon = item.icon;
+                return (
+                  <li key={item.href}>
+                    <DrawerClose asChild>
+                      <Link
+                        href={item.href}
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "flex items-center gap-3 h-11 rounded-md px-3 text-sm font-medium transition-colors",
+                          active
+                            ? "bg-accent text-accent-foreground"
+                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                        )}
+                      >
+                        <Icon className="size-5 shrink-0" aria-hidden="true" />
+                        <span>{item.label}</span>
+                      </Link>
+                    </DrawerClose>
+                  </li>
+                );
+              })}
+            </ul>
           </nav>
-          {/* Bottom spacer so the last items clear the fixed bottom tab bar
-              (h-14) — otherwise scrolling reveals them behind the tab bar. */}
-          <div className="h-14 shrink-0" aria-hidden="true" />
+          {/* No bottom spacer needed: the drawer is z-50, the bottom tab bar
+              z-30, so the drawer paints above it. */}
         </DrawerContent>
       </Drawer>
     </header>
