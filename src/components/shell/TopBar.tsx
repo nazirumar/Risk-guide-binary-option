@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -14,11 +14,20 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Bell, LogOut, Settings, User } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Bell, LogOut, Settings, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { ThemeToggle } from "./ThemeToggle";
 import { AccountSwitcher } from "./AccountSwitcher";
+import { NAV_ITEMS } from "./nav-items";
 import { AccountType } from "@prisma/client";
 
 // NOTE: currentBalance is a string (server action stringified the Decimal —
@@ -43,7 +52,7 @@ type NotifLite = {
 
 /**
  * TopBar — sticky top of the authed app. Renders:
- *   - Left:  mobile menu placeholder (we use bottom tab bar instead), spacer
+ *   - Left:  hamburger (mobile only) → full nav drawer
  *   - Center/Left: account switcher
  *   - Right: theme toggle, notifications bell w/ unread count, user menu
  */
@@ -59,7 +68,9 @@ export function TopBar({
   notifications: NotifLite[];
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [pending, startTransition] = useTransition();
+  const [menuOpen, setMenuOpen] = useState(false);
   const unread = notifications.filter((n) => !n.readAt).length;
 
   const initials =
@@ -72,6 +83,19 @@ export function TopBar({
 
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      {/* Mobile hamburger — opens the full nav drawer (bottom tab bar only
+          shows 5 items, so the rest of the app is unreachable otherwise). */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="shrink-0 sm:hidden"
+        aria-label="Open menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen(true)}
+      >
+        <Menu className="size-5" aria-hidden="true" />
+      </Button>
+
       {/* Mobile: collapse account switcher to a compact trigger on very small screens */}
       <div className="flex-1 min-w-0">
         <AccountSwitcher accounts={accounts} activeAccount={activeAccount} />
@@ -188,6 +212,52 @@ export function TopBar({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* Mobile nav drawer — every page, not just the 5 in the bottom tab bar. */}
+      <Drawer
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        direction="bottom"
+        shouldScaleBackground={false}
+      >
+        <DrawerContent>
+          <DrawerHeader className="flex flex-row items-center justify-between">
+            <DrawerTitle>Menu</DrawerTitle>
+            <DrawerClose asChild>
+              <Button variant="ghost" size="icon" aria-label="Close menu">
+                <X className="size-5" aria-hidden="true" />
+              </Button>
+            </DrawerClose>
+          </DrawerHeader>
+          <nav className="px-2 pb-4" aria-label="Mobile navigation">
+            <ul className="flex flex-col gap-0.5">
+              {NAV_ITEMS.map((item) => {
+                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const Icon = item.icon;
+                return (
+                  <li key={item.href}>
+                    <DrawerClose asChild>
+                      <Link
+                        href={item.href}
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "flex items-center gap-3 h-11 rounded-md px-3 text-sm font-medium transition-colors",
+                          active
+                            ? "bg-accent text-accent-foreground"
+                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                        )}
+                      >
+                        <Icon className="size-5 shrink-0" aria-hidden="true" />
+                        <span>{item.label}</span>
+                      </Link>
+                    </DrawerClose>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        </DrawerContent>
+      </Drawer>
     </header>
   );
 }

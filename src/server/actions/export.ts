@@ -7,7 +7,10 @@
  */
 import { db } from "@/lib/db";
 import { requireUser } from "@/server/lib/require-user";
-import * as XLSX from "xlsx";
+// Use exceljs instead of the abandoned/unmaintained sheetjs (xlsx) package,
+// which has unfixable prototype pollution / ReDoS advisories (GHSA-4r6h-8v6p-xvw6,
+// GHSA-5pgg-2g8v-p4x9) with no patched npm release in the 0.18.x line.
+import ExcelJS from "exceljs";
 
 const escapeCSV = (s: unknown) => {
   const str = String(s ?? "");
@@ -21,15 +24,19 @@ function toCSV(rows: Record<string, unknown>[], headers: string[]): string {
   return `${header}\r\n${body}`;
 }
 
-function toXLSX(
+async function toXLSX(
   rows: Record<string, unknown>[],
   headers: string[],
   sheetName: string,
-): ArrayBuffer {
-  const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+): Promise<ArrayBuffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(sheetName);
+  ws.addRow(headers);
+  for (const row of rows) {
+    ws.addRow(headers.map((h) => row[h] ?? ""));
+  }
+  const buf = await wb.xlsx.writeBuffer();
+  return buf as ArrayBuffer;
 }
 
 // ─── Trades export ──────────────────────────────────────────────────────
@@ -135,7 +142,7 @@ export async function exportTradesXLSX(
     "P/L": Number(t.profitLoss.toString()),
   }));
   return {
-    buffer: toXLSX(rows, headers, "Trades"),
+    buffer: await toXLSX(rows, headers, "Trades"),
     filename: `riskguard-trades-${new Date().toISOString().slice(0, 10)}.xlsx`,
   };
 }
