@@ -230,31 +230,35 @@ export function TopBar({
             </DrawerClose>
           </DrawerHeader>
           <nav className="px-2 pb-4" aria-label="Mobile navigation">
-            <ul className="flex flex-col gap-0.5">
-              {NAV_ITEMS.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                const Icon = item.icon;
-                return (
-                  <li key={item.href}>
-                    <DrawerClose asChild>
-                      <Link
-                        href={item.href}
-                        aria-current={active ? "page" : undefined}
-                        className={cn(
-                          "flex items-center gap-3 h-11 rounded-md px-3 text-sm font-medium transition-colors",
-                          active
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                        )}
-                      >
-                        <Icon className="size-5 shrink-0" aria-hidden="true" />
-                        <span>{item.label}</span>
-                      </Link>
-                    </DrawerClose>
-                  </li>
-                );
-              })}
-            </ul>
+            {/* DrawerContent caps at max-h-[80vh]; the list can exceed that on
+                short screens, so scroll the body instead of clipping it. */}
+            <div className="max-h-[calc(100vh-8rem)] overflow-y-auto">
+              <ul className="flex flex-col gap-0.5">
+                {NAV_ITEMS.map((item) => {
+                  const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  const Icon = item.icon;
+                  return (
+                    <li key={item.href}>
+                      <DrawerClose asChild>
+                        <Link
+                          href={item.href}
+                          aria-current={active ? "page" : undefined}
+                          className={cn(
+                            "flex items-center gap-3 h-11 rounded-md px-3 text-sm font-medium transition-colors",
+                            active
+                              ? "bg-accent text-accent-foreground"
+                              : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                          )}
+                        >
+                          <Icon className="size-5 shrink-0" aria-hidden="true" />
+                          <span>{item.label}</span>
+                        </Link>
+                      </DrawerClose>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </nav>
         </DrawerContent>
       </Drawer>
