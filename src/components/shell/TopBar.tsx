@@ -220,7 +220,13 @@ export function TopBar({
         direction="bottom"
         shouldScaleBackground={false}
       >
-        <DrawerContent>
+        <DrawerContent
+          className={cn(
+            // vaul defaults to max-h-[80vh]; on short mobile screens that
+            // clips the list. Let the content grow and scroll instead.
+            "max-h-[95vh] h-auto flex flex-col",
+          )}
+        >
           <DrawerHeader className="flex flex-row items-center justify-between">
             <DrawerTitle>Menu</DrawerTitle>
             <DrawerClose asChild>
@@ -229,10 +235,8 @@ export function TopBar({
               </Button>
             </DrawerClose>
           </DrawerHeader>
-          <nav className="px-2 pb-4" aria-label="Mobile navigation">
-            {/* DrawerContent caps at max-h-[80vh]; the list can exceed that on
-                short screens, so scroll the body instead of clipping it. */}
-            <div className="max-h-[calc(100vh-8rem)] overflow-y-auto">
+          <nav className="px-2 flex-1 min-h-0" aria-label="Mobile navigation">
+            <div className="h-full overflow-y-auto">
               <ul className="flex flex-col gap-0.5">
                 {NAV_ITEMS.map((item) => {
                   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -260,6 +264,9 @@ export function TopBar({
               </ul>
             </div>
           </nav>
+          {/* Bottom spacer so the last items clear the fixed bottom tab bar
+              (h-14) — otherwise scrolling reveals them behind the tab bar. */}
+          <div className="h-14 shrink-0" aria-hidden="true" />
         </DrawerContent>
       </Drawer>
     </header>
