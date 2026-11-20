@@ -13,6 +13,7 @@ import { BigWinDaySettingsForm } from "@/components/withdrawal/BigWinDaySettings
 import { NewsWarningSettingsForm } from "@/components/news/NewsWarningSettingsForm";
 import { TelegramSettingsForm } from "@/components/settings/TelegramSettingsForm";
 import { AIReviewSettingsForm } from "@/components/settings/AIReviewSettingsForm";
+import { CoachSettingsForm } from "@/components/settings/CoachSettingsForm";
 import { ConnectedAccounts } from "@/components/settings/ConnectedAccounts";
 import { SetPasswordForm } from "@/components/settings/SetPasswordForm";
 import { SignOutAllDevicesForm } from "@/components/settings/SignOutAllDevicesForm";
@@ -44,6 +45,8 @@ export default async function SettingsPage() {
         telegramAlertsPaused: true,
         telegramDailySummaryTime: true,
         aiReviewEnabled: true,
+        aiCoachEnabled: true,
+        coachIncludeNotes: true,
       },
     }),
     db.stakingPlan.findMany({
@@ -146,6 +149,13 @@ export default async function SettingsPage() {
       />
 
       <AIReviewSettingsForm defaults={{ enabled: user?.aiReviewEnabled ?? false }} />
+
+      <CoachSettingsForm
+        defaults={{
+          enabled: user?.aiCoachEnabled ?? false,
+          includeNotes: user?.coachIncludeNotes ?? false,
+        }}
+      />
 
       <DefaultStakingPlanForm
         plans={stakingPlans.map((p) => ({

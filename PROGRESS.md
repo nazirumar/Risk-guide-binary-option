@@ -35,7 +35,7 @@
 - [x] 27 — Condition scoring & heatmap
 - [x] 28 — Live market conditions dashboard (all gates + e2e + 200-client load test passed)
 - [x] 29 — Personal edge & trade warnings (all gates passed; 836/1008 tests green, 172 = known pre-existing FK teardown set)
-- [ ] 30 — AI Intelligence Layer (30.0 + 30.1 implemented; see `docs/PHASE_30_SPEC.md`)
+- [ ] 30 — AI Intelligence Layer (30.0–30.2 implemented; see `docs/PHASE_30_SPEC.md`)
 
 ### Revised re-run — 2026-10-29
 
@@ -1374,19 +1374,19 @@ We are on PHASE 26: Market Data Layer.
 - **Backfill execution**: ran against the live DB in this sandbox — the `Trade` table is empty on this instance (count query: total=0), so there was nothing to process (`Unprocessed trades: 0`, exit 0). The script is idempotent and can be re-run any time: `bun run prisma/backfill-trade-market.ts [--dry-run|--limit N]`.
 - **Next phase (open)**: Phase 30 — only when user explicitly requests.
 
-## Phase 30 — AI Intelligence Layer (in progress: 30.0 + 30.1 done)
+## Phase 30 — AI Intelligence Layer (in progress: 30.0–30.2 done)
 
 Full spec: `docs/PHASE_30_SPEC.md`. User decisions: all four feature areas,
 **Groq** as the AI provider (replacing Anthropic behind a new `AIProvider`
-interface), hybrid news sourcing (Finnhub API + allowed public pages). 30.0 and
-30.1 are implemented; 30.2–30.4 remain untouched. The Phase 30 box above
-stays unchecked until every acceptance item passes.
+interface), hybrid news sourcing (Finnhub API + allowed public pages). 30.0,
+30.1 and 30.2 are implemented; 30.3–30.4 remain untouched. The Phase 30 box
+above stays unchecked until every acceptance item passes.
 
 Sub-phases, in order:
 
 1. [x] **30.0** `AIProvider` abstraction + Groq cutover (weekly review keeps its rule-based fallback).
 2. [x] **30.1** Bounded agentic news pipeline in `worker/` → `NewsArticle` + `/app/news` + trade warnings.
-3. [ ] **30.2** Opt-in AI journal coach over the user's own trades/stats.
+3. [x] **30.2** Opt-in AI journal coach over the user's own trades/stats.
 4. [ ] **30.3** Broker statement/screenshot import with preview, `Decimal` parsing, idempotent transactional commit.
 5. [ ] **30.4** `NEWS_BRIEFING` cron + Telegram/in-app digest, off by default.
 
@@ -1417,6 +1417,30 @@ Sub-phases, in order:
   `tests/e2e/news-briefing.spec.ts` (1 passed with a fresh random email after
   raising its timeout for the slow remote DB). New `tests/news-agent.test.ts`
   has 26 pure tests; targeted Vitest run was 106/106 green.
+
+### 30.2 implementation record
+
+- **Schema**: `User.aiCoachEnabled` / `coachIncludeNotes` (both default false),
+  `coachMessagesToday` / `coachLastMessageAt`, plus `CoachConversation` and
+  `CoachMessage` (cascade delete, userId + conversation indexes) pushed to live
+  Neon via `prisma db push --accept-data-loss` (first attempt hit a transient
+  P1001; retry succeeded and regenerated the client).
+- **Pure module**: `src/lib/ai/coach.ts` — aggregate-only `CoachContext`, bounded
+  notes, email/phone scrubbing (ISO dates preserved), discipline-only system
+  prompt, banned-language post-check that discards unsafe output, deterministic
+  fallback, and the disclaimer on every reply.
+- **Actions**: `src/server/actions/coach.ts` — opt-in + separate notes toggle,
+  12/10m burst limit plus a 20/day quota (`COACH_MAX_MESSAGES_PER_DAY`),
+  userId-scoped conversation/message reads and writes, audit rows, and
+  `sharedContext` persisted on each assistant reply for the disclosure.
+- **UI**: `CoachSettingsForm` (Settings) + `CoachPanel` (Reports) with a bounded
+  thread, "What data was shared" details, rule-based source badge and visible
+  disclaimer. No provider code or key reaches the browser.
+- **Verification**: `typecheck`, targeted ESLint/Prettier, and
+  `tests/coach.test.ts` + `tests/coach-integration.test.ts` (25/25 green;
+  `requireUser` and `next/cache` mocked in the action tests). New
+  `tests/e2e/coach-panel.spec.ts` uses a fresh random email and needs no AI key
+  because the fallback path is deterministic.
 
 Do not start Phase 30 until the user explicitly says so. Revised Phases 26–29
 acceptance still takes precedence.

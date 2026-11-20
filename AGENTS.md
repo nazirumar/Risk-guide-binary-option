@@ -37,6 +37,7 @@
 - The web path never constructs a market provider; it reads precomputed `MarketCondition` / `MarketDataStatus` rows. Worker backfills 30 days of M5/H1, keeps M1/M5 current, and retains M1 7d / M5 90d / H1-D 2y.
 - `MARKET_PROVIDER=deriv` default (public no-auth WebSocket); TwelveData is a rate-limited REST fallback (8/min, 800/day). OANDA is not used. Env knobs are documented in `.env.example`.
 - Phase 30.1 news agent also lives only in `worker/src/news-agent.ts` (off unless `NEWS_AGENT_ENABLED=true`). Pure helpers in `src/lib/news/{sources,extract,dedupe,classify}.ts`; scraped text is untrusted data and only allowlisted domains may be fetched. Web reads `NewsArticle`/`NewsEvent` rows; never fetch pages from a request path.
+- Phase 30.2 coach is opt-in (`User.aiCoachEnabled`, default false) with a separate `coachIncludeNotes` toggle; quota is `COACH_MAX_MESSAGES_PER_DAY` (default 20) plus a 12/10m burst limit. Pure safety/prompt logic is `src/lib/ai/coach.ts`; actions in `src/server/actions/coach.ts`. Every assistant reply stores `sharedContext` for the "What data was shared" disclosure and ends with the risk disclaimer. Never select email/name/screenshots into the AI context.
 
 ## Phase rules & references
 

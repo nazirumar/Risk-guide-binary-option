@@ -4,6 +4,8 @@ import { getAnalytics } from "@/server/lib/analytics";
 import { db } from "@/lib/db";
 import { ReportClient } from "@/components/reports/ReportClient";
 import { WeeklyReviewCard } from "@/components/reports/WeeklyReviewCard";
+import { CoachPanel } from "@/components/coach/CoachPanel";
+import { shouldResetDailyCount } from "@/lib/ai/coach";
 import { formatMoney, formatDate, formatPercent } from "@/lib/format";
 import { startOfTodayUtc, startOfWeekUtc } from "@/lib/timezone";
 
@@ -17,9 +19,23 @@ export default async function ReportsPage({
   // Phase 23: the AI-review opt-in flag (controls the "Generate now" button).
   const userFlags = await db.user.findUnique({
     where: { id: userId },
-    select: { aiReviewEnabled: true },
+    select: {
+      aiReviewEnabled: true,
+      aiCoachEnabled: true,
+      coachIncludeNotes: true,
+      coachMessagesToday: true,
+      coachLastMessageAt: true,
+    },
   });
   const aiReviewEnabled = userFlags?.aiReviewEnabled ?? false;
+  const coachEnabled = userFlags?.aiCoachEnabled ?? false;
+  const coachUsedToday = shouldResetDailyCount(userFlags?.coachLastMessageAt ?? null)
+    ? 0
+    : (userFlags?.coachMessagesToday ?? 0);
+  const coachQuotaRaw = Number.parseInt(process.env.COACH_MAX_MESSAGES_PER_DAY ?? "20", 10);
+  const coachQuota = Number.isFinite(coachQuotaRaw)
+    ? Math.min(200, Math.max(1, coachQuotaRaw))
+    : 20;
   const sp = await searchParams;
 
   // Compute date range from preset or custom.
@@ -188,6 +204,12 @@ export default async function ReportsPage({
     <div className="space-y-6">
       {/* Phase 23 — AI weekly review */}
       <WeeklyReviewCard aiEnabled={aiReviewEnabled} />
+      <CoachPanel
+        enabled={coachEnabled}
+        includeNotes={userFlags?.coachIncludeNotes ?? false}
+        quota={coachQuota}
+        usedToday={coachUsedToday}
+      />
       <ReportClient data={reportData} />
     </div>
   );

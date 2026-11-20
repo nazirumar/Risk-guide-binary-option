@@ -56,8 +56,8 @@ export function AIReviewSettingsForm({ defaults }: { defaults: AIReviewSettings 
             <p className="text-xs text-muted-foreground mt-1 max-w-prose">
               Each week, RiskGuard sends <strong>aggregated statistics only</strong> — net P/L, win
               rate, tilt-event count, discipline score, best/worst strategy and hour, top emotions,
-              rule breaches — to Anthropic&apos;s Claude to write a short plain-language review with
-              3 suggestions.
+              rule breaches — to the configured AI provider (Groq by default) to write a short
+              plain-language review with 3 suggestions.
             </p>
             <p className="text-xs text-muted-foreground mt-1 max-w-prose">
               <strong>Never shared:</strong> your email, name, screenshots, or individual trade

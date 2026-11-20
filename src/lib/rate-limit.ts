@@ -152,6 +152,15 @@ export function rateLimitUnlinkAccount(userId: string) {
   return rateLimit(`unlink:${userId}`, 5, 600);
 }
 
+// ─── Phase 30.2: AI journal coach ──────────────────────────────────────────
+//
+// Burst protection on top of the per-user daily quota stored on User. 12
+// messages per 10 minutes is generous for a reflection chat but stops a
+// compromised session from hammering the AI provider.
+export function rateLimitCoachMessage(userId: string) {
+  return rateLimit(`coach:${userId}`, 12, 600);
+}
+
 // Helper to extract IP from a Next.js Request — falls back to "unknown".
 export function getRequestIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");

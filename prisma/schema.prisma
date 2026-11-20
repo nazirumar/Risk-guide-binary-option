@@ -255,6 +255,18 @@ model User {
   /// must explicitly enable it after reading the clear explanation of what
   /// data is sent (aggregated stats only, no email/name/screenshots).
   aiReviewEnabled          Boolean @default(false)
+  /// Phase 30.2: opt-in AI journal coach. OFF by default — the user must
+  /// enable it after reading exactly what data is shared with the AI.
+  aiCoachEnabled           Boolean @default(false)
+  /// Phase 30.2: when true, the coach may also read the user's OWN journal
+  /// notes (dailyJournal + session notes). Still never email/name/screenshots
+  /// or any other user's data. Separate opt-in from aiCoachEnabled.
+  coachIncludeNotes        Boolean @default(false)
+  /// Phase 30.2: messages sent by this user today (UTC day). Reset lazily by
+  /// the server action when coachLastMessageAt falls on a previous day.
+  coachMessagesToday       Int     @default(0)
+  /// Phase 30.2: when the last coach message was sent (for the daily reset).
+  coachLastMessageAt       DateTime?
   /// Phase 24: the user's subscription (one-to-one back-reference to the
   /// Subscription model which owns the userId FK). Resolved via
   /// `db.subscription.findUnique({ where: { userId } })` — no separate
@@ -289,6 +301,7 @@ model User {
   dailyScores    DailyScore[]
   telegramLink   TelegramLink?
   weeklyReviews  WeeklyReview[]
+  coachConversations CoachConversation[]
   payments       Payment[]
   marketFavorites MarketFavorite[]
 }
@@ -1034,6 +1047,47 @@ model WeeklyReview {
 
   @@unique([userId, weekStart])
   @@index([userId, weekStart])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 30.2 — Opt-in AI journal coach.
+//
+// Every row is userId-scoped: CoachConversation carries the owner and every
+// read/write first checks `conversation.userId === userId` from requireUser().
+// `CoachMessage.sharedContext` stores the exact aggregate payload sent to the
+// AI so the UI can show a "What data was shared" disclosure.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model CoachConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  /// Short title derived from the first user message (capped in the action).
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages CoachMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model CoachMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  /// "user" | "assistant"
+  role           String
+  content        String
+  /// The exact data payload shared with the AI for THIS reply (null on user
+  /// messages). Transparency for the privacy toggle.
+  sharedContext  Json?
+  /// "ai" | "fallback" — how the assistant reply was produced.
+  source         String?
+  createdAt      DateTime @default(now())
+
+  conversation CoachConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

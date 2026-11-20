@@ -1,7 +1,7 @@
 # Phase 30 — AI Intelligence Layer (SPEC ONLY)
 
-> **Status: in progress.** Sub-phases 30.0 and 30.1 are implemented;
-> 30.2–30.4 remain untouched. The Phase 30 box in `PROGRESS.md` stays unchecked
+> **Status: in progress.** Sub-phases 30.0–30.2 are implemented;
+> 30.3–30.4 remain untouched. The Phase 30 box in `PROGRESS.md` stays unchecked
 > until every acceptance item passes. This phase is queued behind the revised
 > Phase 26–29 acceptance items.
 >
@@ -227,7 +227,7 @@ Existing: `FINNHUB_API_KEY`, `NEWS_PROVIDER=finnhub`, `CRON_SECRET`,
 - [x] 30.0 `AIProvider` interface + `GroqClient`; weekly review uses it with rule-based fallback; no key in browser.
 - [x] 30.1 News agent runs only in worker; domain allowlist, robots.txt, rate limits, bounded loop, prompt-injection defenses.
 - [x] 30.1 `NewsArticle` rows visible on `/app/news`; Add-Trade warning merges calendar + articles without blocking.
-- [ ] 30.2 Coach is opt-in, `userId`-scoped, quota-limited, discloses shared data, and appends disclaimer.
+- [x] 30.2 Coach is opt-in, `userId`-scoped, quota-limited, discloses shared data, and appends disclaimer.
 - [ ] 30.3 Import preview → transactional commit → idempotent re-import; balances recomputed via existing helper.
 - [ ] 30.4 `NEWS_BRIEFING` cron + Telegram/in-app copy; off by default; no signal language.
 - [ ] `lint` → `typecheck` → `test` → `build` in order, compared against the 836/1008 baseline (172 known FK failures).
@@ -276,6 +276,30 @@ Existing: `FINNHUB_API_KEY`, `NEWS_PROVIDER=finnhub`, `CRON_SECRET`,
   suite: 1057/1058 first run, the lone failure was a transient Neon P1001 in
   `discipline-integration.test.ts` (passed 11/11 on retry). Full `lint`,
   `typecheck`, `build`, and the new E2E spec all pass.
+
+### 30.2 implementation notes (done)
+
+- Schema: `User.aiCoachEnabled` / `coachIncludeNotes` (both default `false`),
+  `coachMessagesToday` / `coachLastMessageAt` plus `CoachConversation` and
+  `CoachMessage` (cascade on delete, indexed by userId). Pushed to live Neon
+  with `prisma db push --accept-data-loss`; the first attempt hit the same
+  transient P1001, the retry succeeded and regenerated Prisma Client.
+- Pure module `src/lib/ai/coach.ts`: aggregate-only `CoachContext`, bounded
+  notes, email/phone scrubbing, a discipline-only system prompt, a
+  banned-language post-check that discards unsafe model output, a
+  deterministic rule-based fallback, and the disclaimer appended to every
+  reply. No Next/Prisma imports.
+- Actions `src/server/actions/coach.ts`: opt-in + separate notes toggle, 12/10m
+  burst limit on top of a 20/day quota (`COACH_MAX_MESSAGES_PER_DAY`),
+  `userId`-scoped conversation reads/writes, audit rows, and
+  `sharedContext` persisted on every assistant reply for the disclosure.
+- UI: `CoachSettingsForm` (Settings) and `CoachPanel` (Reports) — a bounded
+  chat thread with "What data was shared" details, a rule-based source badge
+  and a visible disclaimer. No provider code or key reaches the browser.
+- Tests: `tests/coach.test.ts` (18 pure), `tests/coach-integration.test.ts`
+  (7 action/DB tests with `requireUser` + `next/cache` mocked), and
+  `tests/e2e/coach-panel.spec.ts` (fresh random email; works without an AI key
+  via the fallback). Targeted Vitest: 25/25 green.
 
 ## Out of scope for Phase 30
 
