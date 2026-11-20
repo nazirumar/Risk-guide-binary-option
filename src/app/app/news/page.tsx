@@ -2,6 +2,7 @@ import { requireUser } from "@/server/lib/require-user";
 import { db } from "@/lib/db";
 import {
   listNewsEventsAction,
+  listNewsArticlesAction,
   getNewsStatsAction,
   refreshNewsEventsAction,
 } from "@/server/actions/news";
@@ -12,12 +13,13 @@ import { Newspaper } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 
 /**
- * /app/news — Phase 22 News calendar.
+ * /app/news — Phase 22 News calendar + Phase 30.1 AI briefing.
  *
  * Server Component. Layout:
  *   - Header + past-results disclaimer + manual refresh button.
  *   - Countdown to next event (live client component).
  *   - Today's events table (filtered by impact).
+ *   - AI-summarized article briefing (worker-written rows only).
  *   - Near-news vs away-from-news trade stats.
  *
  * PROJECT_RULES.md rule #3: every query is scoped by userId for the
@@ -50,6 +52,10 @@ export default async function NewsPage({
     impact,
   });
   const events = eventsResult.events ?? [];
+
+  // Phase 30.1: AI-summarized briefing (precomputed by the worker agent).
+  const articlesResult = await listNewsArticlesAction({ hours: 48, limit: 12 });
+  const articles = articlesResult.articles ?? [];
 
   // Near-news vs away-from-news stats.
   const statsResult = await getNewsStatsAction();
@@ -168,6 +174,60 @@ export default async function NewsPage({
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      {/* AI news briefing (Phase 30.1) */}
+      <div className="rounded-lg border border-border overflow-hidden" data-testid="news-briefing">
+        <div className="border-b border-border px-4 py-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold">News briefing</h2>
+          <span className="text-[10px] text-muted-foreground">
+            AI-summarized from allowlisted public sources — informational, not trade signals
+          </span>
+        </div>
+        {articles.length === 0 ? (
+          <div className="p-4" data-testid="news-briefing-empty">
+            <p className="text-sm text-muted-foreground">
+              No briefing items yet. The news agent runs in the background (set{" "}
+              <code className="font-mono">NEWS_AGENT_ENABLED=true</code> in the worker) — the
+              calendar above is unaffected.
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {articles.map((article) => (
+              <li key={article.id} className="px-4 py-3" data-testid={`news-article-${article.id}`}>
+                <div className="font-medium text-sm">
+                  <a
+                    href={article.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:underline"
+                  >
+                    {article.title}
+                  </a>
+                </div>
+                {article.summary && (
+                  <p className="mt-1 text-xs text-muted-foreground">{article.summary}</p>
+                )}
+                <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                  <span>{article.source}</span>
+                  <span>
+                    {new Date(article.publishedAt).toLocaleString(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                      timeZone: "UTC",
+                    })}{" "}
+                    UTC
+                  </span>
+                  {article.currency.length > 0 && <span>{article.currency.join(", ")}</span>}
+                  {article.impact === "HIGH" && (
+                    <span className="font-medium text-loss">HIGH impact</span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 

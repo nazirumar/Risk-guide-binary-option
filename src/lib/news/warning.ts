@@ -29,6 +29,10 @@ export type NewsEventForWarning = {
   title: string;
   impact: string;
   scheduledAt: Date;
+  /** Phase 30.1: calendar event or AI-classified article. */
+  kind?: "calendar" | "article";
+  /** Phase 30.1: source link for articles (and calendar events, if any). */
+  url?: string | null;
 };
 
 // ─── Asset → currencies ──────────────────────────────────────────────────────

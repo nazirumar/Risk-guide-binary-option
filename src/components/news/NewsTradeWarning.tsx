@@ -65,6 +65,7 @@ export function NewsTradeWarning({ asset }: { asset: string }) {
           <li key={`${e.title}-${i}`} className="flex items-center gap-1.5">
             <Clock className="size-3" aria-hidden="true" />
             <span className="font-medium">{e.title}</span>
+            {e.kind === "article" && <span className="opacity-60">[briefing]</span>}
             <span className="opacity-80">
               ({e.currency === "*" ? "global" : e.currency},{" "}
               {e.minutesFromTrade >= 0 ? `+${e.minutesFromTrade}` : e.minutesFromTrade} min)

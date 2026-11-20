@@ -909,6 +909,59 @@ model NewsEvent {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Phase 30.1 — Agentic news pipeline.
+//
+// `NewsArticle` holds AI-summarized articles harvested from the allowlisted
+// public pages (Finnhub economic events stay in `NewsEvent`). Rows are global
+// — no userId — and are never deleted on a failed agent run; stale data is
+// always better than no data (rule #11: never block trading).
+// `AgentRun` is the audit/observability record for every bounded agent cycle.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model NewsArticle {
+  id          String   @id @default(cuid())
+  /// Allowlisted source id (e.g. "fed", "ecb", "forexfactory").
+  source      String
+  url         String
+  /// Deterministic hash of normalized title + raw text; dedupe key.
+  contentHash String   @unique
+  title       String
+  /// 2–3 sentence AI summary. Untrusted page text is never followed as
+  /// instructions; the fixed prompt asks for a plain summary only.
+  summary     String?
+  publishedAt DateTime
+  /// ISO 4217 codes detected in the article (Postgres scalar lists).
+  currency    String[]
+  /// Tickers/symbols mentioned, capped at 8 per article.
+  symbols     String[]
+  /// LOW | MEDIUM | HIGH — from the bounded AI classifier.
+  impact      String   @default("LOW")
+  rawText     String?
+  createdAt   DateTime @default(now())
+
+  @@unique([source, url])
+  @@index([publishedAt])
+  @@index([impact, publishedAt])
+}
+
+model AgentRun {
+  id          String    @id @default(cuid())
+  /// NEWS_AGENT | AI_REVIEW | COACH | IMPORT | BRIEFING
+  kind        String
+  provider    String?
+  /// OK | PARTIAL | FAILED
+  status      String
+  itemsFound  Int       @default(0)
+  itemsStored Int       @default(0)
+  tokensUsed  Int?
+  error       String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  @@index([kind, startedAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Phase 23 — TelegramLink: links a RiskGuard user to a Telegram chat.
 //
 // Link flow:

@@ -9,7 +9,7 @@
  * visible risk disclaimer — the news warning is a discipline aid, not
  * financial advice.)
  *
- * Five actions:
+ * Seven actions:
  *
  *   - `refreshNewsEventsAction(opts?)` — fetch from the configured provider
  *     + upsert NewsEvent rows. Token-protected at the cron endpoint;
@@ -19,6 +19,9 @@
  *
  *   - `listNewsEventsAction(input)` — list events in [fromUtc, toUtc),
  *     optional filter by impact + currency. For the News page.
+ *
+ *   - `listNewsArticlesAction(input)` — (Phase 30.1) recent AI-summarized
+ *     articles written by the worker's bounded news agent. Read-only.
  *
  *   - `getNextEventAction()` — countdown to the next upcoming event.
  *
@@ -40,6 +43,7 @@ import { getNewsProvider } from "@/lib/news/provider";
 import {
   findRelevantHighImpactEvents,
   getCurrenciesFromAsset,
+  type NewsEventForWarning,
   type RelevantEvent,
 } from "@/lib/news/warning";
 
@@ -59,6 +63,19 @@ export type NewsEventRow = {
   forecast: string | null;
   actual: string | null;
   url: string | null;
+};
+
+/** Phase 30.1 — AI-summarized article from the worker's bounded news agent. */
+export type NewsArticleRow = {
+  id: string;
+  source: string;
+  url: string;
+  title: string;
+  summary: string | null;
+  publishedAt: Date;
+  currency: string[];
+  symbols: string[];
+  impact: "LOW" | "MEDIUM" | "HIGH";
 };
 
 export type NextEventResult = NewsActionResult & {
@@ -225,6 +242,50 @@ export async function listNewsEventsAction(input: {
   };
 }
 
+// ─── 2b. listNewsArticlesAction (Phase 30.1) ───────────────────────────────
+
+/**
+ * Recent AI-summarized articles for the /app/news "Briefing" section.
+ * Rows are global (no userId), written only by the worker's bounded agent —
+ * this action never fetches external pages. Capped at 100 for perf.
+ */
+export async function listNewsArticlesAction(input?: {
+  hours?: number;
+  limit?: number;
+  impact?: "LOW" | "MEDIUM" | "HIGH";
+}): Promise<NewsActionResult & { articles?: NewsArticleRow[] }> {
+  const hours = Math.min(720, Math.max(1, input?.hours ?? 48));
+  const limit = Math.min(100, Math.max(1, input?.limit ?? 12));
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+  const rows = await db.newsArticle.findMany({
+    where: {
+      publishedAt: { gte: since },
+      ...(input?.impact ? { impact: input.impact } : {}),
+    },
+    orderBy: { publishedAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      source: true,
+      url: true,
+      title: true,
+      summary: true,
+      publishedAt: true,
+      currency: true,
+      symbols: true,
+      impact: true,
+    },
+  });
+  return {
+    ok: true,
+    message: `${rows.length} article${rows.length === 1 ? "" : "s"} in range.`,
+    articles: rows.map((r) => ({
+      ...r,
+      impact: r.impact as "LOW" | "MEDIUM" | "HIGH",
+    })),
+  };
+}
+
 // ─── 3. getNextEventAction ──────────────────────────────────────────────────
 
 export async function getNextEventAction(): Promise<NextEventResult> {
@@ -289,28 +350,63 @@ export async function getNewsWarningAction(input: {
   // matching the asset's currencies.
   const fromUtc = new Date(tradeTime.getTime() - minutes * 60_000);
   const toUtc = new Date(tradeTime.getTime() + minutes * 60_000);
-  const candidates = await db.newsEvent.findMany({
-    where: {
-      scheduledAt: { gte: fromUtc, lt: toUtc },
-      impact: "HIGH",
-    },
-    select: {
-      currency: true,
-      title: true,
-      impact: true,
-      scheduledAt: true,
-    },
-  });
+  // Phase 30.1: merge the calendar with AI-classified HIGH-impact articles.
+  // Both are precomputed DB rows — no provider calls in the request path.
+  const [events, articles] = await Promise.all([
+    db.newsEvent.findMany({
+      where: {
+        scheduledAt: { gte: fromUtc, lt: toUtc },
+        impact: "HIGH",
+      },
+      select: {
+        currency: true,
+        title: true,
+        impact: true,
+        scheduledAt: true,
+      },
+    }),
+    db.newsArticle.findMany({
+      where: {
+        impact: "HIGH",
+        publishedAt: { gte: fromUtc, lt: toUtc },
+      },
+      select: { title: true, publishedAt: true, currency: true, url: true },
+      take: 100,
+    }),
+  ]);
 
-  const relevant = findRelevantHighImpactEvents({
+  const calendarCandidates: NewsEventForWarning[] = events.map((c) => ({
+    ...c,
+    impact: c.impact as "LOW" | "MEDIUM" | "HIGH",
+    kind: "calendar",
+  }));
+  // One candidate per currency lets the pure helper do precise matching.
+  const articleCandidates: NewsEventForWarning[] = articles.flatMap((a) =>
+    (a.currency.length > 0 ? a.currency : ["*"]).map((currency) => ({
+      currency,
+      title: a.title,
+      impact: "HIGH" as const,
+      scheduledAt: a.publishedAt,
+      kind: "article" as const,
+      url: a.url,
+    })),
+  );
+
+  const relevantRaw = findRelevantHighImpactEvents({
     asset: input.asset,
     tradeTime,
-    events: candidates.map((c) => ({
-      ...c,
-      impact: c.impact as "LOW" | "MEDIUM" | "HIGH",
-    })),
+    events: [...calendarCandidates, ...articleCandidates],
     minutes,
     highImpactOnly: true,
+  });
+
+  // A single article mentioning both currencies of a pair should warn once.
+  const seen = new Set<string>();
+  const relevant = relevantRaw.filter((r) => {
+    const key = `${r.kind ?? "calendar"}:${r.title}:${r.scheduledAt.toISOString()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 
   return {

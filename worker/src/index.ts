@@ -16,6 +16,7 @@ import {
   ratingChangedToActionable,
 } from "../../src/lib/market/condition-alerts";
 import { DEFAULT_PREFS, type NotificationPrefs } from "../../src/server/lib/notification-types";
+import { isNewsAgentEnabled, NEWS_AGENT_INTERVAL_MS, runNewsAgent } from "./news-agent";
 
 const prisma = new PrismaClient();
 
@@ -501,6 +502,15 @@ async function main() {
   // Phase 28 — score every pair every minute and store one shared row each.
   setInterval(() => void computeConditions(), CONDITION_JOB_INTERVAL_MS);
   void computeConditions();
+
+  // Phase 30.1 — bounded agentic news ingestion. Off by default; the web
+  // request path NEVER constructs a provider or fetches external pages.
+  if (isNewsAgentEnabled()) {
+    setInterval(() => void runNewsAgent(prisma), NEWS_AGENT_INTERVAL_MS);
+    void runNewsAgent(prisma);
+  } else {
+    console.log("[news-agent] disabled (set NEWS_AGENT_ENABLED=true to enable).");
+  }
 }
 
 main().catch((e) => {

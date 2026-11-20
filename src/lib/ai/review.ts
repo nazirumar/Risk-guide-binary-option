@@ -11,10 +11,17 @@
  * email, name, screenshots, or any user-identifying data. A unit test
  * inspects the payload to enforce this.
  *
- * Fallback: when the Anthropic API fails (network / 429 / 500 after
- * retries), `generateWeeklyReviewWithFallback` falls back to the Phase 9
- * rule-based insights engine.
+ * Fallback: when the configured AI provider fails (network / 429 / 500
+ * after retries), `generateWeeklyReviewWithFallback` falls back to the
+ * Phase 9 rule-based insights engine. Provider selection lives in
+ * `src/lib/ai/provider.ts` (Groq by default, Anthropic legacy fallback).
  */
+import { getAIProvider, setAIProvider, RateLimitError, type AIProvider } from "./provider";
+
+export { RateLimitError, RealAnthropicClient } from "./provider";
+
+/** Backwards-compatible name used by Phase 23 callers and tests. */
+export type AnthropicClient = AIProvider;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -65,70 +72,14 @@ export function isoWeekRange(d: Date): { start: Date; end: Date } {
   return { start, end };
 }
 
-// ─── Anthropic client interface ──────────────────────────────────────────────
-
-export interface AnthropicClient {
-  /**
-   * Send the prompt to Claude. Returns the response text. Throws on
-   * failure (caller handles retries + fallback).
-   */
-  complete(prompt: string, systemPrompt: string): Promise<string>;
-}
-
-/**
- * Real Anthropic client using the Messages API. Requires ANTHROPIC_API_KEY.
- */
-export class RealAnthropicClient implements AnthropicClient {
-  private readonly apiKey: string;
-  private readonly model: string;
-
-  constructor(apiKey: string, model = "claude-sonnet-4-5-20250929") {
-    this.apiKey = apiKey;
-    this.model = model;
-  }
-
-  async complete(prompt: string, systemPrompt: string): Promise<string> {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: this.model,
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    });
-    if (res.status === 429) {
-      throw new RateLimitError(`Anthropic API rate limited (429).`);
-    }
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Anthropic API error ${res.status}: ${body.slice(0, 200)}`);
-    }
-    const data = (await res.json()) as {
-      content?: { type: string; text?: string }[];
-    };
-    const text = data.content?.find((c) => c.type === "text")?.text;
-    if (!text) throw new Error("Anthropic API returned no text content.");
-    return text;
-  }
-}
-
-export class RateLimitError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "RateLimitError";
-  }
-}
+// ─── AI provider ─────────────────────────────────────────────────────────────
+// `AnthropicClient` (type alias above) and `RateLimitError` are re-exported
+// from ./provider so Phase 23 callers keep working unchanged.
 
 // ─── System prompt + user prompt builder (pure) ──────────────────────────────
 
 /**
- * The system prompt instructs Claude to:
+ * The system prompt instructs the model to:
  *   - Write a short plain-language review of the trader's week.
  *   - Give exactly 3 specific, actionable suggestions.
  *   - NEVER promise profits or give financial advice.
@@ -222,7 +173,7 @@ export function parseWeeklyReviewResponse(text: string): WeeklyReviewOutput | nu
 // ─── Rule-based fallback (mirrors Phase 9 insights) ─────────────────────────
 
 /**
- * Rule-based fallback review — used when the Anthropic API fails after
+ * Rule-based fallback review — used when the AI provider fails after
  * retries, or the user hasn't opted in. Mirrors the Phase 9
  * `computeInsights` approach: deterministic, rule-based findings.
  *
@@ -344,30 +295,23 @@ export async function generateWeeklyReviewWithFallback(
   };
 }
 
-// ─── Factory ──────────────────────────────────────────────────────────────────
-
-let _client: AnthropicClient | null | undefined;
+// ─── Factory (backwards-compatible wrappers) ─────────────────────────────────
 
 /**
- * Resolve the Anthropic client:
- *   1. Test-registered client via `setAnthropicClient`.
- *   2. `RealAnthropicClient` when ANTHROPIC_API_KEY is set.
- *   3. null (no AI — always use the fallback).
+ * Resolve the configured AI provider via `getAIProvider()`:
+ *   1. Test-registered provider via `setAnthropicClient` / `setAIProvider`.
+ *   2. `GroqClient` when GROQ_API_KEY is set.
+ *   3. Legacy `RealAnthropicClient` when only ANTHROPIC_API_KEY is set.
+ *   4. null (no AI — always use the fallback).
  */
 export function getAnthropicClient(): AnthropicClient | null {
-  if (_client !== undefined) return _client;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (apiKey && apiKey.length > 0) {
-    _client = new RealAnthropicClient(apiKey);
-  } else {
-    _client = null;
-  }
-  return _client;
+  return getAIProvider();
 }
 
 /**
- * Test-only: register a custom Anthropic client (or null to force fallback).
+ * Test-only: register a custom provider (or null to force fallback).
+ * Kept under the old name so Phase 23 tests don't need changes.
  */
 export function setAnthropicClient(client: AnthropicClient | null): void {
-  _client = client;
+  setAIProvider(client);
 }
