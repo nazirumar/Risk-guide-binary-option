@@ -108,11 +108,24 @@ function getProvider(): StorageProvider {
   } else if (uploadthingKey) {
     _provider = new StubCloudStorageProvider("Uploadthing", "https://uploadthing.com/f");
   } else {
-    // Dev / sandbox default — local files served via /api/upload/* (Next.js
-    // route handler that streams from local disk).
-    _provider = new LocalStorageProvider("/home/z/my-project/upload", "/api/upload");
+    // Dev / sandbox default — local files written under the project (the old
+    // absolute /home/z/my-project path was Linux-only and broke on Windows).
+    // Override with UPLOAD_DIR / UPLOAD_URL_PREFIX in production.
+    _provider = new LocalStorageProvider(
+      process.env.UPLOAD_DIR || path.join(process.cwd(), ".uploads"),
+      process.env.UPLOAD_URL_PREFIX || "/api/upload",
+    );
   }
   return _provider;
+}
+
+/**
+ * Phase 30.3 — store an arbitrary (validated) statement upload and return its
+ * public URL. Callers are responsible for type/size validation; this keeps
+ * the storage abstraction independent of any single feature's rules.
+ */
+export async function storeUploadedFile(file: File): Promise<StoredFile> {
+  return getProvider().uploadFile(file);
 }
 
 export async function uploadTradeScreenshot(file: File): Promise<StoredFile> {

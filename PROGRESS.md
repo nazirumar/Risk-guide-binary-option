@@ -1374,21 +1374,21 @@ We are on PHASE 26: Market Data Layer.
 - **Backfill execution**: ran against the live DB in this sandbox — the `Trade` table is empty on this instance (count query: total=0), so there was nothing to process (`Unprocessed trades: 0`, exit 0). The script is idempotent and can be re-run any time: `bun run prisma/backfill-trade-market.ts [--dry-run|--limit N]`.
 - **Next phase (open)**: Phase 30 — only when user explicitly requests.
 
-## Phase 30 — AI Intelligence Layer (in progress: 30.0–30.2 done)
+## Phase 30 — AI Intelligence Layer (in progress: 30.0–30.4 done)
 
 Full spec: `docs/PHASE_30_SPEC.md`. User decisions: all four feature areas,
 **Groq** as the AI provider (replacing Anthropic behind a new `AIProvider`
 interface), hybrid news sourcing (Finnhub API + allowed public pages). 30.0,
-30.1 and 30.2 are implemented; 30.3–30.4 remain untouched. The Phase 30 box
-above stays unchecked until every acceptance item passes.
+All four sub-phases (30.0–30.4) are implemented. The Phase 30 box above stays
+unchecked until every acceptance item passes.
 
 Sub-phases, in order:
 
 1. [x] **30.0** `AIProvider` abstraction + Groq cutover (weekly review keeps its rule-based fallback).
 2. [x] **30.1** Bounded agentic news pipeline in `worker/` → `NewsArticle` + `/app/news` + trade warnings.
 3. [x] **30.2** Opt-in AI journal coach over the user's own trades/stats.
-4. [ ] **30.3** Broker statement/screenshot import with preview, `Decimal` parsing, idempotent transactional commit.
-5. [ ] **30.4** `NEWS_BRIEFING` cron + Telegram/in-app digest, off by default.
+4. [x] **30.3** Broker statement/screenshot import with preview, `Decimal` parsing, idempotent transactional commit.
+5. [x] **30.4** `NEWS_BRIEFING` cron + Telegram/in-app digest, off by default.
 
 ### 30.1 implementation record
 
@@ -1442,5 +1442,52 @@ Sub-phases, in order:
   `tests/e2e/coach-panel.spec.ts` uses a fresh random email and needs no AI key
   because the fallback path is deterministic.
 
-Do not start Phase 30 until the user explicitly says so. Revised Phases 26–29
+### 30.3 implementation record
+
+- **Schema**: `ImportBatch` (unique `(userId, checksum)`, rows JSON for audit)
+  plus additive `source`/`externalId`/`importBatchId` on `Trade` and
+  `Transaction`, with unique `(userId|tradingAccountId, source, externalId)`
+  for idempotency. Pushed to live Neon with `prisma db push --accept-data-loss`;
+  no migration (SQLite migration lock remains).
+- **Pure module**: `src/lib/import/statement.ts` — Zod file validation, quoted
+  CSV/TSV scanner, decimal.js money (no `parseFloat`), date normalizer, SHA-256
+  checksum + deterministic row ids, header alias mapping, strict Groq
+  column-index prompt/parser (untrusted-data fenced), per-row error collection
+  and preview view model.
+- **Actions**: `src/server/actions/statement-import.ts` — preview stores bytes
+  via `src/lib/storage.ts`, reuses identical uploads, never writes journal rows;
+  commit uses one 120 s `$transaction` with batched duplicate lookups +
+  `createMany`, `recomputeAccountBalanceInTx()` for balances/`balanceAfter`, and
+  `IMPORT_PREVIEWED` / `IMPORT_COMMITTED` / `IMPORT_FAILED` audits. The 5 s
+  Prisma default timed out against Neon, hence the explicit timeout.
+- **UI**: `/app/import` + `StatementImportPanel` (account picker, file input,
+  optional OCR text, Ready/Duplicate/Invalid preview table, explicit Commit,
+  recent batches, visible risk disclaimer) and a sidebar "Import" link. The
+  older paste wizard on `/app/reports` is untouched.
+- **Verification**: `typecheck` green; `tests/import-statement.test.ts` +
+  `tests/statement-import-integration.test.ts` 23/23 green; new
+  `tests/e2e/statement-import.spec.ts` uses a fresh random email.
+
+### 30.4 implementation record
+
+- **Type + prefs**: `NEWS_BRIEFING` added to `DEFAULT_PREFS` (inApp/email/telegram
+  all `false`) and `TELEGRAM_ALERT_TYPES`; `NotificationPrefsForm` renders its
+  in-app/email switches. Fixed `updateNotificationPrefsAction()` to preserve
+  existing `telegram` flags so saving the general form no longer wipes them.
+- **Pure copy**: `src/lib/news/briefing.ts` builds a bounded descriptive digest
+  (next high-impact event, market rating/staleness, the user's own edge insight,
+  up to two recent headlines) with the mandatory disclaimer. Banned signal /
+  promise language is detected (reusing the coach detector) and scrubbed before
+  storage; the email HTML escapes all upstream text.
+- **Sweep + cron**: `src/server/lib/news-briefing.ts` is CRON-only, reads global
+  rows once, then per opted-in user composes copy and dispatches to the channels
+  they enabled; email is gated explicitly on `pref.email`. Per-user failures are
+  isolated and every run is audited via `AgentRun.kind = "BRIEFING"`. The
+  `/api/cron/news-briefing` route uses the standard `CRON_SECRET` gate and
+  200/500 response shape; `CRON_SECRET` / Telegram vars added to `.env.example`.
+- **Verification**: `typecheck` green; `tests/news-briefing.test.ts` (9 pure) +
+  `tests/news-briefing-integration.test.ts` (4 live-DB sweep tests) 13/13 green.
+
+Phase 30 sub-phases are now all implemented; the master Phase 30 acceptance box
+stays unchecked until the full gate sequence passes. Revised Phases 26–29
 acceptance still takes precedence.

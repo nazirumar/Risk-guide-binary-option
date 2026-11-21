@@ -66,3 +66,6 @@ server.log
 # Local SQLite DB
 /db/*.db
 /db/*.db-journal
+
+# Phase 30.3 — locally stored statement uploads
+/.uploads/

@@ -38,6 +38,12 @@ const NOTIFICATION_TYPES = [
   },
   { key: "WEEKLY_SUMMARY", label: "Weekly summary", description: "End-of-week P/L digest." },
   { key: "INACTIVITY", label: "Inactivity reminder", description: "No trades in 3+ days." },
+  {
+    key: "NEWS_BRIEFING",
+    label: "News briefing",
+    description:
+      "Scheduled, descriptive round-up of upcoming news, market conditions and your journal. Off unless you opt in.",
+  },
 ];
 
 export function NotificationPrefsForm({

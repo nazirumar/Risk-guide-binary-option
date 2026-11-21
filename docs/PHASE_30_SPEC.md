@@ -203,21 +203,22 @@ model ImportBatch {
 
 ## New env vars (server-only)
 
-| Var                             | Purpose                                               |
-| ------------------------------- | ----------------------------------------------------- |
-| `GROQ_API_KEY`                  | Groq API key (required for AI features)               |
-| `GROQ_MODEL`                    | Model override, default `llama-3.3-70b-versatile`     |
-| `GROQ_TIMEOUT_MS`               | Per-request timeout (default e.g. 20000)              |
-| `NEWS_AGENT_ENABLED`            | Enable/disable scraper in worker (default `false`)    |
-| `NEWS_AGENT_MAX_PAGES`          | Per-run listing-page cap (default 4)                  |
-| `NEWS_AGENT_MAX_ITEMS`          | Per-run article cap (default 20)                      |
-| `NEWS_AGENT_MAX_BYTES`          | Max bytes per fetched page (default 200000)           |
-| `NEWS_AGENT_TIMEOUT_MS`         | Per-fetch timeout (default 10000)                     |
-| `NEWS_AGENT_DOMAIN_INTERVAL_MS` | Min gap between requests to one domain (default 1000) |
-| `NEWS_AGENT_INTERVAL_MS`        | Cadence between agent runs (default 1800000)          |
-| `NEWS_AGENT_SOURCES`            | Comma-separated allowlist ids; empty = all            |
-| `IMPORT_MAX_BYTES`              | Upload size cap                                       |
-| `COACH_MAX_MESSAGES_PER_DAY`    | Per-user quota                                        |
+| Var                                | Purpose                                               |
+| ---------------------------------- | ----------------------------------------------------- |
+| `GROQ_API_KEY`                     | Groq API key (required for AI features)               |
+| `GROQ_MODEL`                       | Model override, default `llama-3.3-70b-versatile`     |
+| `GROQ_TIMEOUT_MS`                  | Per-request timeout (default e.g. 20000)              |
+| `NEWS_AGENT_ENABLED`               | Enable/disable scraper in worker (default `false`)    |
+| `NEWS_AGENT_MAX_PAGES`             | Per-run listing-page cap (default 4)                  |
+| `NEWS_AGENT_MAX_ITEMS`             | Per-run article cap (default 20)                      |
+| `NEWS_AGENT_MAX_BYTES`             | Max bytes per fetched page (default 200000)           |
+| `NEWS_AGENT_TIMEOUT_MS`            | Per-fetch timeout (default 10000)                     |
+| `NEWS_AGENT_DOMAIN_INTERVAL_MS`    | Min gap between requests to one domain (default 1000) |
+| `NEWS_AGENT_INTERVAL_MS`           | Cadence between agent runs (default 1800000)          |
+| `NEWS_AGENT_SOURCES`               | Comma-separated allowlist ids; empty = all            |
+| `IMPORT_MAX_BYTES`                 | Upload size cap (default 2 MiB, clamped 1 KiB–10 MiB) |
+| `UPLOAD_DIR` / `UPLOAD_URL_PREFIX` | Optional local archive dir/URL for statement bytes    |
+| `COACH_MAX_MESSAGES_PER_DAY`       | Per-user quota                                        |
 
 Existing: `FINNHUB_API_KEY`, `NEWS_PROVIDER=finnhub`, `CRON_SECRET`,
 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`.
@@ -228,8 +229,8 @@ Existing: `FINNHUB_API_KEY`, `NEWS_PROVIDER=finnhub`, `CRON_SECRET`,
 - [x] 30.1 News agent runs only in worker; domain allowlist, robots.txt, rate limits, bounded loop, prompt-injection defenses.
 - [x] 30.1 `NewsArticle` rows visible on `/app/news`; Add-Trade warning merges calendar + articles without blocking.
 - [x] 30.2 Coach is opt-in, `userId`-scoped, quota-limited, discloses shared data, and appends disclaimer.
-- [ ] 30.3 Import preview → transactional commit → idempotent re-import; balances recomputed via existing helper.
-- [ ] 30.4 `NEWS_BRIEFING` cron + Telegram/in-app copy; off by default; no signal language.
+- [x] 30.3 Import preview → transactional commit → idempotent re-import; balances recomputed via existing helper.
+- [x] 30.4 `NEWS_BRIEFING` cron + Telegram/in-app/email copy; off by default; no signal language.
 - [ ] `lint` → `typecheck` → `test` → `build` in order, compared against the 836/1008 baseline (172 known FK failures).
 - [ ] New unit tests for pure extract/dedupe/prompt/import/briefing logic; new integration tests clean `Subscription` first.
 - [ ] E2E for news briefing panel, coach chat, and import preview/commit with a fresh random email.
@@ -300,6 +301,61 @@ Existing: `FINNHUB_API_KEY`, `NEWS_PROVIDER=finnhub`, `CRON_SECRET`,
   (7 action/DB tests with `requireUser` + `next/cache` mocked), and
   `tests/e2e/coach-panel.spec.ts` (fresh random email; works without an AI key
   via the fallback). Targeted Vitest: 25/25 green.
+
+### 30.3 implementation notes (done)
+
+- Schema pushed to live Neon with `prisma db push --accept-data-loss` (no
+  migration — the SQLite migration lock is still present): new `ImportBatch`
+  with a unique `(userId, checksum)` key, plus additive `source`, `externalId`
+  and `importBatchId` on `Trade`/`Transaction` (unique on
+  `(userId, source, externalId)` / `(tradingAccountId, source, externalId)`).
+- Pure module `src/lib/import/statement.ts`: file Zod schema, delimiter/quote
+  aware CSV/TSV scanner, decimal.js money parser (no `parseFloat`), date
+  normalizer, deterministic SHA-256 checksum + per-row external ids, header
+  alias mapper, strict Groq column-index response parser with prompt-injection
+  defences, row normalizer with per-row errors, and the preview view model.
+- Actions `src/server/actions/statement-import.ts`: `previewStatementImportAction`
+  validates + archives bytes through `src/lib/storage.ts`, reuses an existing
+  batch for identical uploads, optionally asks Groq for column indices only,
+  and writes **no** journal rows; `commitStatementImportAction` does a single
+  120 s transaction with batched duplicate checks + `createMany`, calls
+  `recomputeAccountBalanceInTx()`, and logs `IMPORT_PREVIEWED` /
+  `IMPORT_COMMITTED` / `IMPORT_FAILED`.
+- UI: dedicated `/app/import` page + `StatementImportPanel` (account picker,
+  file input, optional OCR text, preview table with Ready/Duplicate/Invalid
+  rows, explicit Commit button, recent batches, visible risk disclaimer) and a
+  sidebar "Import" link. The older paste wizard on `/app/reports` is unchanged.
+- Tests: `tests/import-statement.test.ts` (19 pure), `tests/statement-import-integration.test.ts`
+  (4 action/DB tests with `requireUser`, `next/cache` + storage mocked), and
+  `tests/e2e/statement-import.spec.ts` (fresh random email, preview/commit and
+  re-import no-op). Targeted Vitest: 23/23 green.
+
+### 30.4 implementation notes (done)
+
+- Type: `NEWS_BRIEFING` added to `DEFAULT_PREFS` (all three channels `false`)
+  and `TELEGRAM_ALERT_TYPES`. `NotificationPrefsForm` now renders in-app/email
+  toggles for it, and the Telegram settings form picks it up automatically.
+  `updateNotificationPrefsAction()` now preserves existing `telegram` flags
+  instead of silently wiping them on every in-app/email save.
+- Pure module `src/lib/news/briefing.ts`: bounded, descriptive copy from the
+  precomputed next event, market rating and the user's own edge insight; always
+  ends with the risk disclaimer. Banned language (reusing the coach detector
+  plus instruction phrases like "buy now"/"go long") is rejected by
+  `containsBannedBriefingLanguage()` and scrubbed by `sanitizeBriefingCopy()`;
+  the email HTML template escapes all upstream text.
+- Sweep `src/server/lib/news-briefing.ts`: CRON-only, no provider/page fetches.
+  Reads global `NewsArticle`/`NewsEvent` + `buildMarketSnapshot()` once, then
+  per opted-in user calls `getMarketEdgeReport(userId, timezone)` and dispatches
+  through `createNotificationIfAllowed`, `sendEmail` (explicit `pref.email`
+  gate) and `sendTelegramAlertAction`. Failures are per-user isolated and
+  audited on `AgentRun.kind = "BRIEFING"`.
+- Cron route `/api/cron/news-briefing` uses the standard `CRON_SECRET` Bearer /
+  `?token=` gate and 200/500 response shape. `CRON_SECRET` / Telegram env vars
+  documented in `.env.example` (previously missing).
+- Tests: `tests/news-briefing.test.ts` (9 pure) and
+  `tests/news-briefing-integration.test.ts` (4 live-DB sweep tests with email,
+  market snapshot and edge report mocked; Telegram uses the real action with a
+  mock provider). Targeted Vitest: 13/13 green.
 
 ## Out of scope for Phase 30
 

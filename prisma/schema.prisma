@@ -302,6 +302,8 @@ model User {
   telegramLink   TelegramLink?
   weeklyReviews  WeeklyReview[]
   coachConversations CoachConversation[]
+  /// Phase 30.3 — statement/screenshot import batches.
+  importBatches  ImportBatch[]
   payments       Payment[]
   marketFavorites MarketFavorite[]
 }
@@ -453,9 +455,19 @@ model Transaction {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
+  // Phase 30.3 — statement import provenance + idempotency.
+  /// "CSV" | "PDF" | "IMAGE" — null for manually entered rows.
+  source        String?
+  /// Stable per-(user, source, file, row) key; re-imports skip existing rows.
+  externalId    String?
+  importBatchId String?
+
   tradingAccount TradingAccount @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+  importBatch ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
 
   @@index([tradingAccountId, occurredAt])
+  @@index([importBatchId])
+  @@unique([tradingAccountId, source, externalId])
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -535,12 +547,19 @@ model Trade {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
+  // Phase 30.3 — statement import provenance + idempotency.
+  source        String?
+  externalId    String?
+  importBatchId String?
+
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   tradingAccount TradingAccount  @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
   strategy        Strategy?      @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  importBatch     ImportBatch?   @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
   tiltEvents     TiltEvent[]
 
   @@index([userId, openedAt])
+  @@unique([userId, source, externalId])
   @@index([tradingAccountId, openedAt])
   @@index([userId, result])
   @@index([userId, asset])
@@ -1088,6 +1107,41 @@ model CoachMessage {
   conversation CoachConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Phase 30.3 — statement / screenshot import.
+//
+// One batch per uploaded file per user. `checksum` is a SHA-256 of the raw
+// bytes, so re-uploading the same statement reuses the same batch and cannot
+// duplicate rows. Rows are stored raw on the batch for preview + audit.
+// ──────────────────────────────────────────────────────────────────────────────
+
+model ImportBatch {
+  id           String   @id @default(cuid())
+  userId       String
+  /// "CSV" | "PDF" | "IMAGE"
+  source       String
+  /// "PREVIEW" | "COMMITTED" | "FAILED"
+  status       String   @default("PREVIEW")
+  /// Normalized rows + per-row errors, persisted for preview and audit.
+  rows         Json
+  errorSummary String?
+  fileName     String?
+  /// Public URL from the existing storage abstraction (screenshots/PDFs).
+  fileUrl      String?
+  /// SHA-256 of the raw upload — idempotency key within a user.
+  checksum     String
+  committed    Int      @default(0)
+  duplicates   Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  trades       Trade[]
+
+  @@unique([userId, checksum])
+  @@index([userId, createdAt])
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

@@ -28,6 +28,9 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   // off by default"); the worker only notifies users who opt in AND favor a pair.
   MARKET_CONDITION_CHANGED: { inApp: false, email: false, telegram: false },
   TRADE_ADDED: { inApp: false, email: false, telegram: true },
+  // Phase 30.4 — scheduled news briefing. OFF on every channel by default;
+  // the user must opt in explicitly in Settings (in-app/email/Telegram).
+  NEWS_BRIEFING: { inApp: false, email: false, telegram: false },
 };
 
 /**
@@ -44,6 +47,7 @@ export const TELEGRAM_ALERT_TYPES = [
   "GOAL_ACHIEVED",
   "DAILY_SUMMARY",
   "TRADE_ADDED",
+  "NEWS_BRIEFING",
 ] as const;
 
 export type TelegramAlertType = (typeof TELEGRAM_ALERT_TYPES)[number];

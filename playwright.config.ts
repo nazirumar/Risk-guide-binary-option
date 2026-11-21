@@ -23,6 +23,8 @@ export default defineConfig({
     command: "bun run dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    // Slow/filesystem-bound CI sandboxes can take longer than 2 min to boot
+    // the Next dev server; override without changing the checked-in default.
+    timeout: Number(process.env.E2E_WEBSERVER_TIMEOUT ?? 120_000),
   },
 });

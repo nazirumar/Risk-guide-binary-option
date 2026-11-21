@@ -19,6 +19,7 @@ import {
   Grid3x3,
   Activity,
   Crosshair,
+  UploadCloud,
 } from "lucide-react";
 
 /**
@@ -67,6 +68,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "News", href: "/app/news", icon: Newspaper },
   { label: "Goals", href: "/app/goals", icon: Target },
   { label: "Reports", href: "/app/reports", icon: FileText },
+  { label: "Import", href: "/app/import", icon: UploadCloud },
   { label: "Balance Sync", href: "/app/balance-sync", icon: RefreshCw },
   { label: "Withdrawal", href: "/app/withdrawal", icon: PiggyBank },
   { label: "Billing", href: "/app/billing", icon: CreditCard },

@@ -77,11 +77,18 @@ export async function updateNotificationPrefsAction(
   formData: FormData,
 ): Promise<{ ok: boolean; message: string }> {
   const { userId } = await requireUser();
+  const existingUser = await db.user.findUnique({
+    where: { id: userId },
+    select: { notificationPrefs: true },
+  });
+  const existing = (existingUser?.notificationPrefs as NotificationPrefs) ?? {};
   const prefs: NotificationPrefs = {};
   for (const type of Object.keys(DEFAULT_PREFS)) {
     prefs[type] = {
       inApp: formData.get(`${type}_inApp`) === "on",
       email: formData.get(`${type}_email`) === "on",
+      // Saving in-app/email must never silently wipe a Telegram opt-in.
+      telegram: existing[type]?.telegram ?? DEFAULT_PREFS[type]?.telegram,
     };
   }
   await db.user.update({
