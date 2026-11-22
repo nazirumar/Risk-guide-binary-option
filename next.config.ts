@@ -54,6 +54,8 @@ const nextConfig: NextConfig = {
   ],
 
   experimental: {
+    // Next.js security-upgrade marker (16.4.1 → 16.4.6).
+    agentUpgrade: "security",
     serverActions: {
       allowedOrigins: serverActionsAllowedOrigins,
     } as never,
