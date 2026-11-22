@@ -295,7 +295,19 @@ async function buildCoachContext(
   from.setUTCDate(from.getUTCDate() - COACH_WINDOW_DAYS);
   from.setUTCHours(0, 0, 0, 0);
 
-  const [trades, tiltEvents, ruleBreaches, dailyScores, user, sessionNotes] = await Promise.all([
+  const importedSources = ["CSV", "PDF", "IMAGE"];
+  const [
+    trades,
+    tiltEvents,
+    ruleBreaches,
+    dailyScores,
+    user,
+    sessionNotes,
+    importedBatches,
+    importedTrades,
+    importedTransactions,
+    lastImport,
+  ] = await Promise.all([
     db.trade.findMany({
       where: {
         userId,
@@ -333,6 +345,30 @@ async function buildCoachContext(
           take: MAX_NOTES,
         })
       : Promise.resolve([]),
+    db.importBatch.count({
+      where: { userId, status: "COMMITTED", createdAt: { gte: from, lte: now } },
+    }),
+    db.trade.findMany({
+      where: {
+        userId,
+        source: { in: importedSources },
+        openedAt: { gte: from, lte: now },
+      },
+      select: { profitLoss: true },
+      take: 2000,
+    }),
+    db.transaction.count({
+      where: {
+        source: { in: importedSources },
+        tradingAccount: { userId },
+        createdAt: { gte: from, lte: now },
+      },
+    }),
+    db.importBatch.findFirst({
+      where: { userId, status: "COMMITTED", createdAt: { gte: from, lte: now } },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    }),
   ]);
 
   let netPl = new Decimal(0);
@@ -374,6 +410,17 @@ async function buildCoachContext(
   };
 
   const context: CoachContext = { stats };
+  if (importedBatches > 0 || importedTrades.length > 0 || importedTransactions > 0) {
+    let importNetPl = new Decimal(0);
+    for (const row of importedTrades) importNetPl = importNetPl.plus(row.profitLoss);
+    context.imports = {
+      batches: importedBatches,
+      importedTrades: importedTrades.length,
+      importedTransactions,
+      netPL: importNetPl.toNumber(),
+      lastImportedDay: lastImport ? utcDayKey(lastImport.createdAt) : null,
+    };
+  }
   if (includeNotes) {
     const notes: string[] = [];
     const journal = (user?.dailyJournal as Record<string, string> | null) ?? {};

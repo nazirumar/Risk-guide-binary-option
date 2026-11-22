@@ -49,9 +49,20 @@ export type CoachStatsContext = {
  * user separately enabled `coachIncludeNotes`, and is capped/bounded by the
  * server action before it gets here.
  */
+/** Bounded, anonymous aggregates from the user's OWN committed imports. */
+export type CoachImportContext = {
+  batches: number;
+  importedTrades: number;
+  importedTransactions: number;
+  /** Net P/L of imported trade rows; already part of `stats.netPL`. */
+  netPL: number;
+  lastImportedDay: string | null;
+};
+
 export type CoachContext = {
   stats: CoachStatsContext;
   notes?: string[];
+  imports?: CoachImportContext;
 };
 
 export type CoachReply = {
@@ -154,6 +165,13 @@ export function buildCoachPrompt(
   if (s.topEmotions.length > 0) {
     lines.push(`Top emotions: ${s.topEmotions.map((e) => `${e.emotion} (${e.count})`).join(", ")}`);
   }
+  if (context.imports && (context.imports.batches > 0 || context.imports.importedTrades > 0)) {
+    const i = context.imports;
+    lines.push(
+      ``,
+      `Imported statement rows in the same window (already included in the totals above): ${i.importedTrades} trade rows and ${i.importedTransactions} transaction rows from ${i.batches} committed batch(es); their net P/L was ${i.netPL.toFixed(2)}; last import ${i.lastImportedDay ?? "unknown"}.`,
+    );
+  }
   if (context.notes && context.notes.length > 0) {
     lines.push(
       ``,
@@ -213,6 +231,12 @@ export function buildFallbackCoachReply(context: CoachContext, question: string)
         "Your discipline score is in a healthy range — keep the routine that produced it.",
       );
     }
+  }
+
+  if (context.imports && context.imports.batches > 0) {
+    parts.push(
+      `Your journal also includes ${context.imports.importedTrades} imported trade rows and ${context.imports.importedTransactions} imported transaction rows from ${context.imports.batches} statement batch(es) — consistency between broker records and your journal is part of the same process.`,
+    );
   }
 
   const topic = sanitizeCoachInput(question, 120);

@@ -17,11 +17,29 @@ export type AICompletionOptions = {
   timeoutMs?: number;
 };
 
+export type AIImageInput = {
+  /** Base64-encoded bytes (no data-URL prefix). */
+  base64: string;
+  /** e.g. "image/png". Only image/* is accepted by the implementation. */
+  mimeType: string;
+};
+
 export interface AIProvider {
   /** Optional label used observability rows (e.g. "groq"). */
   readonly name?: string;
   /** Returns the raw text response; throws on failure (caller decides fallback). */
   complete(prompt: string, systemPrompt: string, options?: AICompletionOptions): Promise<string>;
+  /**
+   * Optional vision capability used only by statement-screenshot OCR. When it
+   * is absent the caller asks the user to paste the statement text instead.
+   * Model output is raw delimited text, normalized by pure import helpers.
+   */
+  completeWithImage?(
+    prompt: string,
+    systemPrompt: string,
+    image: AIImageInput,
+    options?: AICompletionOptions,
+  ): Promise<string>;
 }
 
 export class RateLimitError extends Error {
@@ -57,6 +75,7 @@ export class GroqClient implements AIProvider {
     private readonly apiKey: string,
     private readonly model: string = DEFAULT_GROQ_MODEL,
     private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS,
+    private readonly visionModel?: string,
   ) {}
 
   async complete(
@@ -100,6 +119,68 @@ export class GroqClient implements AIProvider {
       const text = data.choices?.[0]?.message?.content;
       if (typeof text !== "string" || text.length === 0) {
         throw new Error("Groq API returned no text content.");
+      }
+      return text;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** OCR for statement screenshots. Requires GROQ_VISION_MODEL to be configured. */
+  async completeWithImage(
+    prompt: string,
+    systemPrompt: string,
+    image: AIImageInput,
+    options: AICompletionOptions = {},
+  ): Promise<string> {
+    if (!this.visionModel) {
+      throw new Error("No vision model configured (set GROQ_VISION_MODEL).");
+    }
+    if (!image.mimeType.startsWith("image/") || !image.base64) {
+      throw new Error("A supported image (PNG/JPEG/WebP) is required for OCR.");
+    }
+    const timeoutMs = options.timeoutMs ?? this.timeoutMs;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(GROQ_CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.visionModel,
+          max_tokens: options.maxTokens ?? 4096,
+          temperature: 0,
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: prompt },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:${image.mimeType};base64,${image.base64}` },
+                },
+              ],
+            },
+          ],
+        }),
+        signal: controller.signal,
+      });
+
+      if (res.status === 429) throw new RateLimitError("Groq OCR rate limited (429).");
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`Groq OCR error ${res.status}: ${body.slice(0, 200)}`);
+      }
+      const data = (await res.json()) as {
+        choices?: { message?: { content?: string | null } }[];
+      };
+      const text = data.choices?.[0]?.message?.content;
+      if (typeof text !== "string" || text.length === 0) {
+        throw new Error("Groq OCR returned no text content.");
       }
       return text;
     } finally {
@@ -181,6 +262,7 @@ export function getAIProvider(): AIProvider | null {
       groqKey,
       nonEmpty(process.env.GROQ_MODEL) ?? DEFAULT_GROQ_MODEL,
       envTimeout(),
+      nonEmpty(process.env.GROQ_VISION_MODEL),
     );
     return _provider;
   }

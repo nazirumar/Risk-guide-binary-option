@@ -1,9 +1,10 @@
 # Phase 30 — AI Intelligence Layer (SPEC ONLY)
 
-> **Status: in progress.** Sub-phases 30.0–30.2 are implemented;
-> 30.3–30.4 remain untouched. The Phase 30 box in `PROGRESS.md` stays unchecked
-> until every acceptance item passes. This phase is queued behind the revised
-> Phase 26–29 acceptance items.
+> **Status: in progress.** All sub-phases 30.0–30.4 and the three approved
+> follow-ons (broker templates + screenshot OCR, briefing schedule settings,
+> import-aware coach context) are implemented. The Phase 30 box in `PROGRESS.md`
+> stays unchecked until every acceptance item passes. This phase is queued
+> behind the revised Phase 26–29 acceptance items.
 >
 > User decisions captured for this spec:
 >
@@ -356,6 +357,30 @@ Existing: `FINNHUB_API_KEY`, `NEWS_PROVIDER=finnhub`, `CRON_SECRET`,
   `tests/news-briefing-integration.test.ts` (4 live-DB sweep tests with email,
   market snapshot and edge report mocked; Telegram uses the real action with a
   mock provider). Targeted Vitest: 13/13 green.
+
+## Approved follow-ons (implemented after 30.4)
+
+- **Broker import templates + screenshot OCR.** `src/lib/import/broker-templates.ts`
+  is browser-safe and holds the auto mapper plus Deriv / IQ Option / Olymp Trade /
+  Pocket Option / MT5-style header aliases; `/app/import` exposes the picker and
+  the chosen id is stored on `ImportBatch.rows` for repeat uploads. PNG/JPEG/WebP
+  screenshots are transcribed server-side by `GroqClient.completeWithImage`
+  when `GROQ_VISION_MODEL` is configured. The vision prompt requests only a
+  bounded delimited table (`OCR_SYSTEM_PROMPT` / `sanitizeOcrText()`); the
+  column-mapping prompt still requests only indices. PDFs still require pasted
+  text-layer text. `normalizeRows()` now upper-cases CALL/PUT directions.
+- **Digest timing/frequency.** Stored inside the `NEWS_BRIEFING` preference
+  object (no schema change): `briefingTime` (HH:MM in the user's timezone),
+  `briefingFrequency` (DAILY / WEEKDAYS / WEEKLY) and `briefingWeekday`.
+  `src/lib/news/schedule.ts` is pure; the cron should run every 15 minutes and
+  `sendNewsBriefings(now)` matches each user's window. Per-user
+  `NEWS_BRIEFING_SENT` audit rows make retries safe. `updateNotificationPrefsAction()`
+  preserves both Telegram flags and these schedule fields.
+- **Coach sees import aggregates.** `CoachContext.imports` carries only counts
+  of committed batches and imported rows, their net P/L and the last imported
+  day (no file names, row notes or external ids). It is included in the prompt,
+  the deterministic fallback and the stored `sharedContext` disclosure. The
+  server query is scoped by `userId`/own trading accounts.
 
 ## Out of scope for Phase 30
 

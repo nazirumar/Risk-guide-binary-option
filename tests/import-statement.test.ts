@@ -9,6 +9,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   autoColumnMap,
+  BROKER_TEMPLATES,
+  buildOcrPrompt,
   buildPreviewRows,
   checksumOf,
   detectDelimiter,
@@ -16,12 +18,15 @@ import {
   makeExternalId,
   MAPPING_SYSTEM_PROMPT,
   normalizeRows,
+  OCR_SYSTEM_PROMPT,
   parseDate,
   parseDelimited,
   parseMappingResponse,
   parseMoney,
   parseStatementText,
+  sanitizeOcrText,
   tableFromText,
+  templateColumnMap,
   buildMappingPrompt,
 } from "@/lib/import/statement";
 
@@ -239,5 +244,56 @@ describe("importFileSchema", () => {
       size: 50 * 1024 * 1024,
     });
     expect(tooBig.success).toBe(false);
+  });
+});
+
+describe("broker templates", () => {
+  it("exposes an auto option plus concrete broker templates", () => {
+    expect(BROKER_TEMPLATES.map((t) => t.id)).toContain("auto");
+    expect(BROKER_TEMPLATES.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("maps template-specific headers without touching row values", () => {
+    const headers = ["Date", "Asset", "Direction", "Investment", "Profit", "Result"];
+    const map = templateColumnMap(headers, "iq-option");
+    expect(map).toMatchObject({
+      date: "0",
+      asset: "1",
+      direction: "2",
+      stake: "3",
+      amount: "4",
+      result: "5",
+    });
+    const { rows, errors } = normalizeRows(
+      headers,
+      [["2026-11-21", "EUR/USD", "call", "100", "80", "WIN"]],
+      map,
+      "CSV",
+      CHECKSUM,
+    );
+    expect(errors).toEqual([]);
+    expect(rows[0]).toMatchObject({ amount: "80", stake: "100", direction: "CALL" });
+  });
+
+  it("falls back to auto-detect for unknown template ids", () => {
+    expect(templateColumnMap(["Date", "Amount"], "not-a-template")).toEqual(
+      autoColumnMap(["Date", "Amount"]),
+    );
+  });
+});
+
+describe("screenshot OCR helpers", () => {
+  it("asks only for a verbatim table and marks the image untrusted", () => {
+    expect(OCR_SYSTEM_PROMPT).toContain("UNTRUSTED DATA");
+    expect(OCR_SYSTEM_PROMPT).toContain("Return ONLY a header row");
+    expect(buildOcrPrompt("deriv")).toContain("Deriv");
+  });
+
+  it("strips fences/control characters and bounds untrusted OCR output", () => {
+    const raw = "```csv\nDate,Amount\u0000\r\n2026-11-21,10\n```\n";
+    expect(sanitizeOcrText(raw)).toBe("Date,Amount\n2026-11-21,10");
+    expect(
+      sanitizeOcrText(Array.from({ length: 5000 }, (_, i) => `row ${i}`).join("\n")).split("\n"),
+    ).toHaveLength(2000);
   });
 });

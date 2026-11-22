@@ -11,6 +11,8 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import argon2 from "argon2";
 
 const prisma = new PrismaClient();
+/** 08:05 UTC matches the default 08:00 briefing window. */
+const BRIEFING_NOW = new Date("2026-11-21T08:05:00.000Z");
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -89,7 +91,7 @@ describe("sendNewsBriefings", () => {
   it("does nothing for users who never opted in, but still audits the run", async () => {
     await makeUser(`plain-${Date.now()}@example.com`);
 
-    const result = await sendNewsBriefings();
+    const result = await sendNewsBriefings(BRIEFING_NOW);
 
     expect(result.ok).toBe(true);
     expect(result.eligibleUsers).toBe(0);
@@ -111,7 +113,7 @@ describe("sendNewsBriefings", () => {
       data: { userId: user.id, chatId: `chat-${Date.now()}` },
     });
 
-    const result = await sendNewsBriefings();
+    const result = await sendNewsBriefings(BRIEFING_NOW);
 
     expect(result.ok).toBe(true);
     expect(result.eligibleUsers).toBe(1);
@@ -141,7 +143,7 @@ describe("sendNewsBriefings", () => {
       NEWS_BRIEFING: { inApp: false, email: true, telegram: false },
     });
 
-    const result = await sendNewsBriefings();
+    const result = await sendNewsBriefings(BRIEFING_NOW);
 
     expect(result.emailSent).toBe(1);
     expect(result.inAppSent).toBe(0);
@@ -156,7 +158,7 @@ describe("sendNewsBriefings", () => {
     });
     await makeUser(`other-${Date.now()}@example.com`);
 
-    const result = await sendNewsBriefings();
+    const result = await sendNewsBriefings(BRIEFING_NOW);
 
     expect(result.eligibleUsers).toBe(1);
     expect(result.inAppSent).toBe(1);
@@ -164,5 +166,37 @@ describe("sendNewsBriefings", () => {
     const rows = await prisma.notification.findMany();
     expect(rows).toHaveLength(1);
     expect(rows[0].userId).toBe(opted.id);
+  });
+
+  it("skips users outside their chosen time window", async () => {
+    await makeUser(`later-${Date.now()}@example.com`, {
+      NEWS_BRIEFING: {
+        inApp: true,
+        email: false,
+        telegram: false,
+        briefingTime: "09:00",
+        briefingFrequency: "DAILY",
+      },
+    });
+
+    const result = await sendNewsBriefings(BRIEFING_NOW);
+
+    expect(result.eligibleUsers).toBe(0);
+    expect(result.inAppSent).toBe(0);
+    expect(await prisma.notification.count()).toBe(0);
+  });
+
+  it("does not deliver twice when the cron is invoked again in the same window", async () => {
+    await makeUser(`once-${Date.now()}@example.com`, {
+      NEWS_BRIEFING: { inApp: true, email: false, telegram: false },
+    });
+
+    const first = await sendNewsBriefings(BRIEFING_NOW);
+    const second = await sendNewsBriefings(BRIEFING_NOW);
+
+    expect(first.inAppSent).toBe(1);
+    expect(second.inAppSent).toBe(0);
+    expect(await prisma.notification.count()).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: "NEWS_BRIEFING_SENT" } })).toBe(1);
   });
 });

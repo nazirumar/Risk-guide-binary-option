@@ -40,7 +40,21 @@ function context(notes?: string[]): CoachContext {
     followedPlanRate: 0.8,
     topEmotions: [{ emotion: "CALM", count: 5 }],
   };
-  return notes ? { stats, notes } : { stats };
+  const base: CoachContext = notes ? { stats, notes } : { stats };
+  return base;
+}
+
+function contextWithImports(): CoachContext {
+  return {
+    ...context(),
+    imports: {
+      batches: 2,
+      importedTrades: 8,
+      importedTransactions: 3,
+      netPL: -12.5,
+      lastImportedDay: "2026-11-20",
+    },
+  };
 }
 
 function clientReturning(text: string | Error): CoachAIClient {
@@ -130,6 +144,15 @@ describe("buildCoachPrompt", () => {
     expect(prompt).not.toContain("555 123 4567");
   });
 
+  it("includes bounded import aggregates without row values or identity data", () => {
+    const prompt = buildCoachPrompt(contextWithImports(), "Any patterns?", []);
+    expect(prompt).toContain("Imported statement rows in the same window");
+    expect(prompt).toContain("8 trade rows and 3 transaction rows from 2 committed batch(es)");
+    expect(prompt).toContain("last import 2026-11-20");
+    expect(prompt).not.toContain("statement.csv");
+    expect(prompt.toLowerCase()).not.toContain("email");
+  });
+
   it("system prompt forbids advice, promises and signal wording", () => {
     expect(COACH_SYSTEM_PROMPT).toContain("NEVER give financial advice");
     expect(COACH_SYSTEM_PROMPT).toContain("NEVER promise profits");
@@ -144,6 +167,14 @@ describe("buildFallbackCoachReply", () => {
     expect(reply).toContain("10 closed trades");
     expect(reply).toContain("60.0%");
     expect(reply).toContain("2 tilt events");
+    expect(reply).toContain(COACH_DISCLAIMER);
+    expect(containsBannedCoachLanguage(reply)).toBe(false);
+  });
+
+  it("mentions imported rows as a record-keeping aggregate only", () => {
+    const reply = buildFallbackCoachReply(contextWithImports(), "How am I doing?");
+    expect(reply).toContain("8 imported trade rows");
+    expect(reply).toContain("2 statement batch(es)");
     expect(reply).toContain(COACH_DISCLAIMER);
     expect(containsBannedCoachLanguage(reply)).toBe(false);
   });

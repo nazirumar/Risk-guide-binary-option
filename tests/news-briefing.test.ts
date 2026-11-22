@@ -14,6 +14,7 @@ import {
   containsBannedBriefingLanguage,
   sanitizeBriefingCopy,
 } from "@/lib/news/briefing";
+import { isBriefingDue, localClockInTz, normalizeBriefingSchedule } from "@/lib/news/schedule";
 
 describe("buildNewsBriefing", () => {
   it("composes descriptive copy from all inputs and appends the disclaimer", () => {
@@ -121,5 +122,35 @@ describe("briefingEmailHtml", () => {
     });
     expect(html).not.toContain("<b onmouseover");
     expect(html).toContain("&lt;b onmouseover=&quot;x&quot;&gt;CPI&lt;/b&gt; &amp; more");
+  });
+});
+
+describe("briefing schedule", () => {
+  const at = new Date("2026-11-21T08:05:00.000Z"); // Saturday
+
+  it("defaults to 08:00 daily and normalizes invalid stored values", () => {
+    expect(normalizeBriefingSchedule(null)).toEqual({
+      briefingTime: "08:00",
+      briefingFrequency: "DAILY",
+      briefingWeekday: 1,
+    });
+    expect(isBriefingDue({}, at, "UTC")).toBe(true);
+    expect(isBriefingDue({}, new Date("2026-11-21T09:05:00.000Z"), "UTC")).toBe(false);
+  });
+
+  it("uses the user's timezone, not the server's", () => {
+    expect(isBriefingDue({ briefingTime: "03:00" }, at, "America/New_York")).toBe(true);
+    expect(isBriefingDue({ briefingTime: "08:00" }, at, "America/New_York")).toBe(false);
+    expect(localClockInTz(at, "America/New_York").dateKey).toBe("2026-11-21");
+  });
+
+  it("honours weekdays and the chosen weekly weekday", () => {
+    expect(isBriefingDue({ briefingFrequency: "WEEKDAYS" }, at, "UTC")).toBe(false);
+    expect(isBriefingDue({ briefingFrequency: "WEEKLY", briefingWeekday: 6 }, at, "UTC")).toBe(
+      true,
+    );
+    expect(isBriefingDue({ briefingFrequency: "WEEKLY", briefingWeekday: 1 }, at, "UTC")).toBe(
+      false,
+    );
   });
 });

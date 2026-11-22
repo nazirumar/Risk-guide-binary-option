@@ -13,6 +13,7 @@ import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, UploadCloud } fr
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { BROKER_TEMPLATES } from "@/lib/import/broker-templates";
 import {
   commitStatementImportAction,
   previewStatementImportAction,
@@ -53,6 +54,7 @@ const STATUS_STYLES: Record<string, string> = {
 export function StatementImportPanel({ accounts, recentBatches }: Props) {
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [file, setFile] = useState<File | null>(null);
+  const [brokerTemplate, setBrokerTemplate] = useState("auto");
   const [ocrText, setOcrText] = useState("");
   const [preview, setPreview] = useState<StatementPreviewResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -75,6 +77,7 @@ export function StatementImportPanel({ accounts, recentBatches }: Props) {
       const fd = new FormData();
       fd.set("tradingAccountId", accountId);
       fd.set("file", file);
+      fd.set("brokerTemplate", brokerTemplate);
       if (ocrText.trim()) fd.set("ocrText", ocrText);
       const res = await previewStatementImportAction(fd);
       setPreview(res);
@@ -133,7 +136,7 @@ export function StatementImportPanel({ accounts, recentBatches }: Props) {
       </header>
 
       <section className="rounded-lg border border-border bg-card p-4 sm:p-6" aria-label="Upload">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <label className="space-y-2 text-sm">
             <span className="font-medium">Trading account</span>
             <select
@@ -152,6 +155,25 @@ export function StatementImportPanel({ accounts, recentBatches }: Props) {
           </label>
 
           <label className="space-y-2 text-sm">
+            <span className="font-medium">Broker template</span>
+            <select
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={brokerTemplate}
+              onChange={(e) => setBrokerTemplate(e.target.value)}
+              data-testid="import-template"
+            >
+              {BROKER_TEMPLATES.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.label}
+                </option>
+              ))}
+            </select>
+            <span className="block text-xs text-muted-foreground">
+              Prefills the column mapping. Every row is still shown for review.
+            </span>
+          </label>
+
+          <label className="space-y-2 text-sm">
             <span className="font-medium">Statement file</span>
             <input
               ref={fileInput}
@@ -166,8 +188,9 @@ export function StatementImportPanel({ accounts, recentBatches }: Props) {
               data-testid="import-file"
             />
             <span className="block text-xs text-muted-foreground">
-              CSV up to 2 MB by default. PDF/images are archived and their text layer or OCR output
-              is mapped with AI when configured.
+              CSV up to 2 MB by default. PDFs are archived and need pasted text; screenshots can be
+              transcribed automatically when GROQ_VISION_MODEL is configured, or paste the text
+              yourself.
             </span>
           </label>
         </div>
@@ -183,8 +206,8 @@ export function StatementImportPanel({ accounts, recentBatches }: Props) {
               data-testid="import-ocr-text"
             />
             <span className="block text-xs text-muted-foreground">
-              The AI only maps column names to fields — it never receives your name, email or
-              screenshots.
+              Optional override. Automatic screenshot OCR produces this text; the AI only maps
+              column names to fields and never receives your name or email.
             </span>
           </label>
         )}

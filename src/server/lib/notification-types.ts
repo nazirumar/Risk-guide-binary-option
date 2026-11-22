@@ -4,10 +4,32 @@
  * functions. Type exports and const exports are flagged as "found object".
  */
 
-export type NotificationPrefs = Record<
-  string,
-  { inApp: boolean; email: boolean; telegram?: boolean }
->;
+import {
+  DEFAULT_BRIEFING_FREQUENCY,
+  DEFAULT_BRIEFING_TIME,
+  DEFAULT_BRIEFING_WEEKDAY,
+  type BriefingFrequency,
+} from "@/lib/news/schedule";
+
+export type { BriefingFrequency, BriefingSchedule } from "@/lib/news/schedule";
+export {
+  BRIEFING_FREQUENCIES,
+  DEFAULT_BRIEFING_FREQUENCY,
+  DEFAULT_BRIEFING_TIME,
+  DEFAULT_BRIEFING_WEEKDAY,
+} from "@/lib/news/schedule";
+
+export type NotificationPreference = {
+  inApp: boolean;
+  email: boolean;
+  telegram?: boolean;
+  /** Optional per-user timing for NEWS_BRIEFING (HH:MM in the user's TZ). */
+  briefingTime?: string;
+  briefingFrequency?: BriefingFrequency;
+  briefingWeekday?: number;
+};
+
+export type NotificationPrefs = Record<string, NotificationPreference>;
 
 export const DEFAULT_PREFS: NotificationPrefs = {
   RISK_LIMIT_80: { inApp: true, email: true, telegram: true },
@@ -30,7 +52,14 @@ export const DEFAULT_PREFS: NotificationPrefs = {
   TRADE_ADDED: { inApp: false, email: false, telegram: true },
   // Phase 30.4 — scheduled news briefing. OFF on every channel by default;
   // the user must opt in explicitly in Settings (in-app/email/Telegram).
-  NEWS_BRIEFING: { inApp: false, email: false, telegram: false },
+  NEWS_BRIEFING: {
+    inApp: false,
+    email: false,
+    telegram: false,
+    briefingTime: DEFAULT_BRIEFING_TIME,
+    briefingFrequency: DEFAULT_BRIEFING_FREQUENCY,
+    briefingWeekday: DEFAULT_BRIEFING_WEEKDAY,
+  },
 };
 
 /**

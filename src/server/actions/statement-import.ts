@@ -30,17 +30,21 @@ import { requireUser } from "@/server/lib/require-user";
 import {
   ALLOWED_IMPORT_TYPES,
   buildMappingPrompt,
+  buildOcrPrompt,
   buildPreviewRows,
   checksumOf,
   IMPORT_SOURCES,
   importFileSchema,
   importMaxBytes,
+  isBrokerTemplateId,
   MAPPING_SYSTEM_PROMPT,
   normalizeRows,
   normalizedRowSchema,
+  OCR_SYSTEM_PROMPT,
   parseMappingResponse,
+  sanitizeOcrText,
   tableFromText,
-  autoColumnMap,
+  templateColumnMap,
   type ImportSource,
   type StatementPreviewRow,
 } from "@/lib/import/statement";
@@ -60,6 +64,8 @@ export type StatementPreviewResult = {
   duplicateCount?: number;
   errorCount?: number;
   mappingSource?: "ai" | "auto";
+  brokerTemplate?: string;
+  ocrUsed?: boolean;
   alreadyCommitted?: boolean;
 };
 
@@ -86,6 +92,8 @@ const storedBatchSchema = z.object({
   errors: z.array(z.object({ row: z.number().int().positive(), message: z.string() })),
   rawRows: z.array(z.array(z.string())),
   mappingSource: z.enum(["ai", "auto"]),
+  brokerTemplate: z.string().optional(),
+  ocrUsed: z.boolean().optional(),
   fileName: z.string(),
   checksum: z.string(),
 });
@@ -164,6 +172,8 @@ export async function previewStatementImportAction(
   if (bytes.length === 0) return { ok: false, message: "The selected file is empty." };
   const checksum = checksumOf(bytes);
   const source = sourceForFile(file.type);
+  const requestedTemplate = String(formData.get("brokerTemplate") ?? "auto");
+  const brokerTemplate = isBrokerTemplateId(requestedTemplate) ? requestedTemplate : "auto";
 
   // Same file re-uploaded: reuse the stored preview (the batch is user-scoped
   // by a unique (userId, checksum) constraint, so this cannot fork).
@@ -189,6 +199,8 @@ export async function previewStatementImportAction(
         duplicateCount: seen.size,
         errorCount: stored.errors.length,
         mappingSource: stored.mappingSource,
+        brokerTemplate: stored.brokerTemplate ?? "auto",
+        ocrUsed: stored.ocrUsed ?? false,
         alreadyCommitted: existing.status === "COMMITTED",
         message:
           existing.status === "COMMITTED"
@@ -198,18 +210,42 @@ export async function previewStatementImportAction(
     }
   }
 
-  // CSV/TSV is parsed locally. PDF/image bytes go through the storage layer;
-  // Groq maps the pasted text layer/OCR output into normalized rows.
+  // CSV/TSV is parsed locally. PDF text is pasted by the user; screenshots can
+  // be transcribed by a configured vision model. In every case the model only
+  // returns a delimited table or column indices — never normalized row values.
+  const provider = getAIProvider();
   let text = "";
+  let ocrUsed = false;
   if (source === "CSV") {
     text = bytes.toString("utf8").replace(/^\uFEFF/, "");
   } else {
     text = String(formData.get("ocrText") ?? "").trim();
+    if (!text && source === "IMAGE") {
+      if (!provider?.completeWithImage) {
+        return {
+          ok: false,
+          message:
+            "Set GROQ_VISION_MODEL to OCR screenshots automatically, or paste the statement text in the box.",
+        };
+      }
+      try {
+        const raw = await provider.completeWithImage(
+          buildOcrPrompt(brokerTemplate),
+          OCR_SYSTEM_PROMPT,
+          { base64: bytes.toString("base64"), mimeType: file.type },
+          { maxTokens: 4096, temperature: 0, timeoutMs: 30_000 },
+        );
+        text = sanitizeOcrText(raw);
+        ocrUsed = text.length > 0;
+      } catch (error) {
+        return { ok: false, message: `Screenshot OCR failed: ${errorMessage(error)}` };
+      }
+    }
     if (!text) {
       return {
         ok: false,
         message:
-          "This format needs extracted text. Paste the PDF text layer or OCR output in the text box to preview rows.",
+          "This format needs extracted text. Paste the PDF text layer or a screenshot OCR result in the text box to preview rows.",
       };
     }
   }
@@ -218,9 +254,8 @@ export async function previewStatementImportAction(
   const { headers, rows: rawRows } = tableFromText(text);
   if (headers.length === 0) return { ok: false, message: "No header row found in the statement." };
 
-  let map = autoColumnMap(headers);
+  let map = templateColumnMap(headers, brokerTemplate);
   let mappingSource: "ai" | "auto" = "auto";
-  const provider = getAIProvider();
   if (provider && map.amount !== null) {
     try {
       const completion = await provider.complete(
@@ -261,6 +296,8 @@ export async function previewStatementImportAction(
     errors: mapped.errors,
     rawRows: rawRows.slice(0, 200),
     mappingSource,
+    brokerTemplate,
+    ocrUsed,
     fileName: file.name,
     checksum,
   };
@@ -293,6 +330,8 @@ export async function previewStatementImportAction(
           errors: mapped.errors.length,
           duplicates: seen.size,
           mappingSource,
+          brokerTemplate,
+          ocrUsed,
           storageError,
           maxBytes: importMaxBytes(),
           allowedTypes: [...ALLOWED_IMPORT_TYPES],
@@ -312,6 +351,8 @@ export async function previewStatementImportAction(
       duplicateCount: seen.size,
       errorCount: mapped.errors.length,
       mappingSource,
+      brokerTemplate,
+      ocrUsed,
       message: storageError
         ? `Rows parsed, but the original file could not be archived (${storageError}).`
         : undefined,

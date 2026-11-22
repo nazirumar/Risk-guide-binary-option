@@ -1,11 +1,14 @@
 /**
  * GET /api/cron/news-briefing — token-protected scheduled news digest.
  *
- * Phase 30.4. Recommended schedule: once each morning (e.g. 07:00 UTC).
- * Composes one short, descriptive briefing per opted-in user from precomputed
- * news/market rows and the user's own journal aggregates, then dispatches via
- * the in-app / email / Telegram channels the user enabled. Everything is OFF
- * by default (DEFAULT_PREFS.NEWS_BRIEFING).
+ * Phase 30.4. Recommended schedule: every 15 minutes. Each opted-in user is
+ * matched against their own time/frequency window in Settings (default 08:00
+ * in their timezone) and receives at most one digest per day/week.
+ *
+ * Composes one short, descriptive briefing from precomputed news/market rows
+ * and the user's own journal aggregates, then dispatches via the in-app /
+ * email / Telegram channels the user enabled. Everything is OFF by default
+ * (DEFAULT_PREFS.NEWS_BRIEFING).
  *
  * Auth + response shape match the other cron routes (CRON_SECRET as a Bearer
  * header or ?token= query param).

@@ -99,6 +99,7 @@ beforeEach(async () => {
   await prisma.trade.deleteMany();
   await prisma.tradingSession.deleteMany();
   await prisma.transaction.deleteMany();
+  await prisma.importBatch.deleteMany();
   await prisma.balanceCheck.deleteMany();
   await prisma.tradingAccount.deleteMany();
   await prisma.subscription.deleteMany();
@@ -209,6 +210,70 @@ describe("Phase 30.2 — AI coach actions", () => {
     expect(
       await prisma.auditLog.count({ where: { userId: user.id, action: "COACH_MESSAGE_SENT" } }),
     ).toBe(1);
+  });
+
+  it("includes the user's own imported rows in the disclosed aggregate", async () => {
+    const user = await makeUser(`coach-import-${Date.now()}@example.com`);
+    currentTestUserId = user.id;
+    const account = await makeAccount(user.id);
+    const batch = await prisma.importBatch.create({
+      data: {
+        userId: user.id,
+        source: "CSV",
+        status: "COMMITTED",
+        rows: {} as never,
+        checksum: `coach-import-${Date.now()}`,
+        fileName: "statement.csv",
+      },
+    });
+    await prisma.trade.create({
+      data: {
+        userId: user.id,
+        tradingAccountId: account.id,
+        asset: "EUR/USD",
+        direction: "CALL",
+        stake: new Decimal("10"),
+        payoutPercent: new Decimal("0.85"),
+        expiryMinutes: 5,
+        result: "WIN",
+        profitLoss: new Decimal("7.25"),
+        openedAt: new Date(),
+        source: "CSV",
+        externalId: "coach-import-trade",
+        importBatchId: batch.id,
+      },
+    });
+    await prisma.transaction.create({
+      data: {
+        tradingAccountId: account.id,
+        type: "DEPOSIT",
+        amount: new Decimal("100"),
+        source: "CSV",
+        externalId: "coach-import-transaction",
+        importBatchId: batch.id,
+      },
+    });
+    await prisma.user.update({ where: { id: user.id }, data: { aiCoachEnabled: true } });
+
+    const res = await sendCoachMessageAction({ content: "How am I doing?" });
+    expect(res.ok).toBe(true);
+
+    const assistant = await prisma.coachMessage.findFirst({ where: { role: "assistant" } });
+    const shared = assistant?.sharedContext as {
+      imports?: {
+        batches?: number;
+        importedTrades?: number;
+        importedTransactions?: number;
+        netPL?: number;
+      };
+    };
+    expect(shared?.imports).toMatchObject({
+      batches: 1,
+      importedTrades: 1,
+      importedTransactions: 1,
+      netPL: 7.25,
+    });
+    expect(assistant?.content).toContain("1 imported trade rows");
   });
 
   it("shares notes only with the separate opt-in and scrubs them from the prompt", async () => {

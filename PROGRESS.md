@@ -1488,6 +1488,34 @@ Sub-phases, in order:
 - **Verification**: `typecheck` green; `tests/news-briefing.test.ts` (9 pure) +
   `tests/news-briefing-integration.test.ts` (4 live-DB sweep tests) 13/13 green.
 
+### Approved Phase 30 follow-ons (implemented)
+
+- **Broker templates + screenshot OCR**: browser-safe
+  `src/lib/import/broker-templates.ts` (auto, Deriv, IQ Option, Olymp Trade,
+  Pocket Option, MT5); the chosen id is sent with every preview and stored on
+  `ImportBatch.rows`. PNG/JPEG/WebP uploads are transcribed server-side via
+  `GroqClient.completeWithImage` when `GROQ_VISION_MODEL` is set, with a bounded
+  verbatim-table prompt and sanitizer; PDFs still need pasted text. Vision output
+  never becomes normalized rows directly, and `normalizeRows()` now upper-cases
+  CALL/PUT directions. `.env.example` documents the server-only vision model.
+- **Digest timing/frequency**: `src/lib/news/schedule.ts` is pure (HH:MM in the
+  user's timezone, DAILY/WEEKDAYS/WEEKLY, default 08:00). Stored inside the
+  `NEWS_BRIEFING` preference object — no schema change. `BriefingScheduleForm`
+  on `/app/settings` saves via `updateBriefingScheduleAction()`, which preserves
+  channel toggles; `updateNotificationPrefsAction()` preserves the schedule
+  fields. `sendNewsBriefings(now)` filters by the user's window and records a
+  `NEWS_BRIEFING_SENT` audit row keyed by local day, so 15-minute cron retries
+  never double-send. All channels remain OFF by default.
+- **Coach import context**: `CoachContext.imports` carries only committed batch
+  counts, imported row counts, net P/L and the last imported day — scoped by the
+  user's own id/accounts, never file names, external ids or row notes. It appears
+  in the prompt, the deterministic fallback and the stored `sharedContext`
+  disclosure, with the usual risk disclaimer.
+- **Verification**: `lint` green (one pre-existing DataTable compiler warning),
+  `typecheck` green, 56/56 pure tests green across
+  `import-statement` / `news-briefing` / `coach`, and 6/6 live-DB briefing sweep
+  tests green. Full suite rerun pending Neon pool health.
+
 Phase 30 sub-phases are now all implemented; the master Phase 30 acceptance box
 stays unchecked until the full gate sequence passes. Revised Phases 26–29
 acceptance still takes precedence.

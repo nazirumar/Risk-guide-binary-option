@@ -4,6 +4,7 @@ import { ProfileForm } from "./forms/ProfileForm";
 import { ChangePasswordForm } from "./forms/ChangePasswordForm";
 import { DeleteAccountForm } from "./forms/DeleteAccountForm";
 import { NotificationPrefsForm } from "@/components/settings/NotificationPrefsForm";
+import { BriefingScheduleForm } from "@/components/settings/BriefingScheduleForm";
 import { TradingHoursForm } from "@/components/settings/TradingHoursForm";
 import { DefaultStakingPlanForm } from "@/components/settings/DefaultStakingPlanForm";
 import { PreTradeConfirmSettingsForm } from "@/components/settings/PreTradeConfirmSettingsForm";
@@ -68,8 +69,16 @@ export default async function SettingsPage() {
     }),
   ]);
 
-  const notificationPrefs =
-    (user?.notificationPrefs as Record<string, { inApp: boolean; email: boolean }>) ?? null;
+  type StoredPref = {
+    inApp: boolean;
+    email: boolean;
+    telegram?: boolean;
+    briefingTime?: string;
+    briefingFrequency?: string;
+    briefingWeekday?: number;
+  };
+  const notificationPrefs = (user?.notificationPrefs as Record<string, StoredPref>) ?? null;
+  const briefingPref = notificationPrefs?.NEWS_BRIEFING ?? null;
   const tradingHours =
     (user?.tradingHours as { start: string; end: string; days: number[] }) ?? null;
 
@@ -91,6 +100,12 @@ export default async function SettingsPage() {
       <ProfileForm defaults={{ name: name ?? "", timezone, baseCurrency }} />
 
       <NotificationPrefsForm prefs={notificationPrefs} />
+
+      <BriefingScheduleForm
+        defaults={briefingPref}
+        timezone={timezone || "UTC"}
+        optedIn={Boolean(briefingPref?.inApp || briefingPref?.email || briefingPref?.telegram)}
+      />
 
       <TradingHoursForm defaults={tradingHours} />
 

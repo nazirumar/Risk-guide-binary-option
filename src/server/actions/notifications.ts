@@ -12,6 +12,11 @@
  */
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import {
+  normalizeBriefingFrequency,
+  normalizeBriefingTime,
+  normalizeBriefingWeekday,
+} from "@/lib/news/schedule";
 import { requireUser } from "@/server/lib/require-user";
 import type { NotificationPrefs } from "@/server/lib/notification-types";
 import { DEFAULT_PREFS } from "@/server/lib/notification-types";
@@ -87,8 +92,18 @@ export async function updateNotificationPrefsAction(
     prefs[type] = {
       inApp: formData.get(`${type}_inApp`) === "on",
       email: formData.get(`${type}_email`) === "on",
-      // Saving in-app/email must never silently wipe a Telegram opt-in.
+      // Saving in-app/email must never silently wipe a Telegram opt-in or the
+      // user's chosen briefing schedule.
       telegram: existing[type]?.telegram ?? DEFAULT_PREFS[type]?.telegram,
+      ...(type === "NEWS_BRIEFING"
+        ? {
+            briefingTime: existing[type]?.briefingTime ?? DEFAULT_PREFS.NEWS_BRIEFING.briefingTime,
+            briefingFrequency:
+              existing[type]?.briefingFrequency ?? DEFAULT_PREFS.NEWS_BRIEFING.briefingFrequency,
+            briefingWeekday:
+              existing[type]?.briefingWeekday ?? DEFAULT_PREFS.NEWS_BRIEFING.briefingWeekday,
+          }
+        : {}),
     };
   }
   await db.user.update({
@@ -97,6 +112,46 @@ export async function updateNotificationPrefsAction(
   });
   revalidatePath("/app/settings");
   return { ok: true, message: "Notification preferences saved." };
+}
+
+/**
+ * Save the optional news-briefing schedule. Channel toggles are untouched —
+ * this action only changes when an already opted-in user receives the digest.
+ */
+export async function updateBriefingScheduleAction(input: {
+  briefingTime: string;
+  briefingFrequency: string;
+  briefingWeekday: number | string;
+}): Promise<{ ok: boolean; message: string }> {
+  const { userId } = await requireUser();
+  const time = normalizeBriefingTime(input?.briefingTime);
+  const frequency = normalizeBriefingFrequency(input?.briefingFrequency);
+  const weekday = normalizeBriefingWeekday(input?.briefingWeekday);
+  if (!time || !frequency || weekday === null) {
+    return { ok: false, message: "Choose a valid time, frequency and weekday." };
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { notificationPrefs: true },
+  });
+  const existing = (user?.notificationPrefs as NotificationPrefs) ?? {};
+  const current = existing.NEWS_BRIEFING ?? DEFAULT_PREFS.NEWS_BRIEFING;
+  const prefs: NotificationPrefs = {
+    ...existing,
+    NEWS_BRIEFING: {
+      ...current,
+      briefingTime: time,
+      briefingFrequency: frequency,
+      briefingWeekday: weekday,
+    },
+  };
+  await db.user.update({
+    where: { id: userId },
+    data: { notificationPrefs: prefs as never },
+  });
+  revalidatePath("/app/settings");
+  return { ok: true, message: "News briefing schedule saved." };
 }
 
 /** Update trading hours settings. */
