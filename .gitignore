@@ -69,3 +69,8 @@ server.log
 
 # Phase 30.3 — locally stored statement uploads
 /.uploads/
+
+# Runtime artifacts — never commit
+/upload/
+/tool-results/
+*.tar.gz

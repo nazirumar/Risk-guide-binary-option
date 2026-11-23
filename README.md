@@ -21,6 +21,10 @@ edge. Built with Next.js 16 + TypeScript + Prisma + Tailwind + shadcn/ui.
 | **Analytics**             | Equity curve + drawdown chart, win rate by asset/hour/weekday/strategy/emotion, insights panel, period comparison                    |
 | **Goals & Sessions**      | Daily/weekly/monthly profit targets, trading sessions with auto-linked trades, pre-trade checklist, compounding planner              |
 | **Reports**               | Printable reports, CSV/XLSX export, CSV import wizard, full JSON backup/restore                                                      |
+| **Statement Import**      | CSV/TSV broker statement import with Groq column mapping, preview, idempotent batched commit and balance recompute (Phase 30.3)       |
+| **AI Journal Coach**      | Opt-in Groq-powered journal coach with import-aware context and mandatory disclosure guardrails (Phase 30.2)                          |
+| **News Briefing**         | Worker-only news agent (allowlisted sources, robots.txt, dedupe) with Groq classification and timezone-aware digests, off by default (Phase 30.4) |
+| **Telegram Alerts**       | Trade-added alerts and scheduled daily summaries via Telegram bot                                                                     |
 
 ## Tech Stack
 
@@ -34,6 +38,7 @@ edge. Built with Next.js 16 + TypeScript + Prisma + Tailwind + shadcn/ui.
 | Styling    | Tailwind CSS 4 + shadcn/ui (New York)        |
 | Charts     | Recharts                                     |
 | Money math | decimal.js (never floating point)            |
+| AI         | Groq (provider-agnostic AI layer)            |
 | Tests      | Vitest (371 tests) + Playwright (e2e)        |
 | Deploy     | Docker / Vercel                              |
 
@@ -298,7 +303,7 @@ out does not revoke or log the user out of their Google account itself").
 ├── Dockerfile             Multi-stage production build
 ├── docker-compose.yml     Self-hosting (Postgres + app)
 ├── PROJECT_RULES.md       Permanent rules — read first
-├── PROGRESS.md            Phase tracker — 14 phases complete
+├── PROGRESS.md            Phase tracker — Phase 30 complete (checklist-driven)
 ├── SECURITY.md            Security model documentation
 ├── TESTING.md             Test strategy + coverage
 └── README.md              ← this file
@@ -306,7 +311,7 @@ out does not revoke or log the user out of their Google account itself").
 
 ## Contributing
 
-1. Pick the first unchecked phase in `PROGRESS.md` (all 14 are now complete).
+1. Pick the first unchecked item in `PROGRESS.md` (Phase 30 is the latest completed phase).
 2. Read `PROJECT_RULES.md` for permanent rules.
 3. Implement; run all quality gates.
 4. Update `PROGRESS.md` with the acceptance checklist results.
@@ -315,4 +320,3 @@ out does not revoke or log the user out of their Google account itself").
 ## License
 
 Proprietary — internal use only during development.
-"# Risk-guide-binary-option" 
